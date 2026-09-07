@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdf-translator"
+version = "0.1.0"
+description = "Local-first Human-in-the-Loop PDF Book Translator"
+authors = [{ name = "Masoud Salehi" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "sqlmodel>=0.0.16",
+    "pymupdf>=1.24.0",
+    "jinja2>=3.1.3",
+    "python-multipart>=0.0.9",
+    "aiofiles>=23.2.1",
+    "httpx>=0.27.0",
+    "pydantic>=2.6.0",
+    "python-docx>=1.1.0",
+    "markdown>=3.6",
+    "beautifulsoup4>=4.12.0",
+    "markdownify>=0.11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.2.0",
+    "ruff>=0.3.0",
+]
+browser = [
+    "playwright>=1.42.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
