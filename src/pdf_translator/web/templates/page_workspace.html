@@ -1,0 +1,920 @@
+{% extends "base.html" %}
+
+{% block container_class %}container-fluid{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+  <div style="display: flex; align-items: center; gap: 1rem;">
+    <a href="/projects/{{ page.project_id }}" class="btn btn-secondary btn-sm">
+      ← Back to Book Overview
+    </a>
+    <div>
+      <span style="font-weight: 700; font-size: 1.15rem;">{{ page.project_title }}</span>
+      <span style="color: var(--color-text-muted); margin: 0 0.5rem;">/</span>
+      <span style="font-weight: 600; color: var(--color-primary);">Page {{ page.page_number }} of {{ page.total_pages }}</span>
+    </div>
+  </div>
+
+  <div style="display: flex; align-items: center; gap: 1rem;">
+    <!-- Status Badge -->
+    <span id="page-status-badge" class="badge 
+      {% if (page.status.value if page.status.value is defined else page.status) == 'READY' %}badge-ready
+      {% elif (page.status.value if page.status.value is defined else page.status) == 'APPROVED_FOR_TRANSLATION' %}badge-approved-for-trans
+      {% elif (page.status.value if page.status.value is defined else page.status) == 'TRANSLATING' %}badge-translating
+      {% elif (page.status.value if page.status.value is defined else page.status) in ['TRANSLATED', 'IN_REVIEW'] %}badge-in-review
+      {% elif (page.status.value if page.status.value is defined else page.status) == 'APPROVED' %}badge-approved
+      {% elif (page.status.value if page.status.value is defined else page.status) == 'EXPORTED' %}badge-exported
+      {% else %}badge-failed{% endif %}">
+      {{ page.status.value if page.status.value is defined else page.status }}
+    </span>
+
+    <!-- Prev / Next Navigation with Auto-Approval -->
+    <div style="display: flex; gap: 0.35rem;">
+      {% if page.prev_page_number %}
+      <button type="button" onclick="navigateWithAutoApprove('/projects/{{ page.project_id }}/pages/{{ page.prev_page_number }}')" class="btn btn-secondary btn-sm">
+        ◀ Prev Page
+      </button>
+      {% else %}
+      <button class="btn btn-secondary btn-sm" disabled style="opacity: 0.5;">◀ Prev Page</button>
+      {% endif %}
+
+      {% if page.next_page_number %}
+      <button type="button" onclick="navigateWithAutoApprove('/projects/{{ page.project_id }}/pages/{{ page.next_page_number }}')" class="btn btn-secondary btn-sm">
+        Next Page ▶
+      </button>
+      {% else %}
+      <button class="btn btn-secondary btn-sm" disabled style="opacity: 0.5;">Next Page ▶</button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Main Workspace: 2-Pane Side-by-Side -->
+<div class="workspace-container">
+  
+  <!-- Left Pane: PDF Page High-Res Image -->
+  <div class="workspace-pane">
+    <div class="pane-header">
+      <div class="pane-title">
+        <span>📄</span> Original PDF Page Visual
+      </div>
+      <div style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-secondary btn-sm" onclick="zoomImage(0.15)">Zoom +</button>
+        <button class="btn btn-secondary btn-sm" onclick="zoomImage(-0.15)">Zoom -</button>
+        <button class="btn btn-secondary btn-sm" onclick="resetZoom()">Reset</button>
+      </div>
+    </div>
+    <div class="pane-body pdf-preview-box" id="pdf-container">
+      <img src="{{ page.image_url }}" alt="Page {{ page.page_number }}" id="pdf-image" class="pdf-page-image">
+    </div>
+  </div>
+
+  <!-- Right Pane: HITL Workflow (Extracted Source & Translation) -->
+  <div class="workspace-pane">
+    <div class="pane-header">
+      <div class="pane-title" style="gap: 0.75rem;">
+        <button class="btn btn-sm {% if (page.status.value if page.status.value is defined else page.status) in ['READY', 'APPROVED_FOR_TRANSLATION'] %}btn-primary{% else %}btn-secondary{% endif %}" id="tab-source-btn" onclick="switchTab('source')">
+          1. Source Text (Extracted)
+        </button>
+        <button class="btn btn-sm {% if (page.status.value if page.status.value is defined else page.status) not in ['READY', 'APPROVED_FOR_TRANSLATION'] %}btn-primary{% else %}btn-secondary{% endif %}" id="tab-trans-btn" onclick="switchTab('translation')">
+          2. Human Review & Translation
+        </button>
+      </div>
+      <div>
+        <span id="save-status-indicator" style="font-size: 0.8rem; color: var(--color-text-muted);"></span>
+      </div>
+    </div>
+
+    <!-- Tab 1: Source Text Inspection -->
+    <div class="pane-body" id="tab-source-content" style="display: flex; flex-direction: column; gap: 1rem;">
+      <div style="font-size: 0.85rem; color: var(--color-text-muted); background: var(--color-surface-subtle); padding: 0.6rem 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border-subtle);">
+        💡 <strong>Operator Pre-Check:</strong> Review the extracted text from the PDF. Edit any scanning/formatting glitches if necessary, then click <em>Approve for AI Translation</em>.
+      </div>
+      <textarea id="source-text-input" class="text-editor-textarea" placeholder="Extracted source text will appear here...">{{ page.source_text }}</textarea>
+    </div>
+
+    <!-- Tab 2: Translation & Review -->
+    <div class="pane-body" id="tab-translation-content" style="display: none; flex-direction: column; gap: 1rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; background: var(--color-surface-subtle); padding: 0.6rem 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border-subtle); flex-wrap: wrap; gap: 0.5rem;">
+        <span style="font-size: 0.85rem; color: var(--color-text-muted);">
+          🤖 <strong>AI Translation & Human Polish:</strong> Automated browser or API translation.
+        </span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary btn-sm" onclick="toggleAssistantDrawer()" title="Open In-Reading AI Assistant">
+            ✨ دستیار مطالعه
+          </button>
+          <button class="btn btn-secondary btn-sm" id="toggle-reader-btn" onclick="toggleReadingMode()" title="Toggle Persian Book Reading View with Vazirmatn font">
+            📖 Reading Mode
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="startNewAIChat()" title="Start a fresh chat thread in AI (e.g. for a new chapter)">
+            ➕ New Chat Thread
+          </button>
+          <a href="/settings" class="btn btn-secondary btn-sm" title="Configure AI Provider (Browser or API)">
+            ⚙️ Settings
+          </a>
+          <button class="btn btn-primary btn-sm" id="trigger-translate-btn" onclick="triggerTranslation()">
+            ⚡ Translate with AI
+          </button>
+        </div>
+      </div>
+
+      <div id="translating-indicator" style="display: none; text-align: center; padding: 2.5rem 1rem; background: var(--color-surface-subtle); border-radius: var(--radius-md); border: 1px solid var(--color-border);">
+        <div style="font-weight: 700; font-size: 1.15rem; color: var(--color-warning); margin-bottom: 0.5rem;">
+          Translating with AI Engine...
+        </div>
+        <p style="color: var(--color-text-muted); font-size: 0.9rem;">Applying natural phrasing, terminology rules and context...</p>
+      </div>
+
+      <!-- Editor Mode -->
+      <textarea id="translated-text-input" class="text-editor-textarea rtl-text" placeholder="Translated Persian text will appear here for review and editing...">{{ page.approved_text or page.latest_translation or '' }}</textarea>
+
+      <!-- Reading Book Mode (Vazirmatn Typography) -->
+      <div id="reading-mode-container" class="reading-book-paper" style="display: none;"></div>
+    </div>
+
+    <!-- Actions Footer -->
+    <div class="workspace-actions">
+      <div id="footer-source-actions" style="display: flex; justify-content: space-between; width: 100%;">
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="saveSourceText()">
+            Save Source Text
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="reExtractSourceText()" title="Re-extract and reconstruct continuous paragraphs from PDF">
+            🔄 Re-extract from PDF
+          </button>
+        </div>
+        <button class="btn btn-primary" id="approve-trans-btn" onclick="approveForTranslation()">
+          ✅ Approve for AI Translation
+        </button>
+      </div>
+
+      <div id="footer-trans-actions" style="display: none; justify-content: space-between; width: 100%;">
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="saveTranslationDraft()">
+            Save Draft
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="openReadingModal()" title="Open Immersive Full-Screen Book Reading Mode">
+            📖 Full-Screen Reading Mode
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleAssistantDrawer()" title="Open AI Assistant">
+            ✨ دستیار مطالعه
+          </button>
+        </div>
+        <div style="display: flex; gap: 0.5rem;">
+          <a href="/api/projects/{{ page.project_id }}/pages/{{ page.page_number }}/export?format=docx" class="btn btn-secondary btn-sm" download>
+            Export DOCX
+          </a>
+          <button class="btn btn-success" id="approve-final-btn" onclick="approveFinalTranslation()">
+            🌟 Approve Final Translation
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Full-Screen Book Reading Mode Modal -->
+<div id="reader-modal" class="reader-modal-overlay">
+  <div class="reader-modal-dialog">
+    <div class="reader-modal-header">
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <span style="font-size: 1.25rem;">📖</span>
+        <div>
+          <strong style="font-size: 1rem;">{{ page.project_title }}</strong>
+          <span id="reader-modal-page-info" style="font-size: 0.8rem; color: var(--color-text-dim); margin-right: 0.5rem;">— صفحه {{ page.page_number }} از {{ page.total_pages }}</span>
+        </div>
+      </div>
+      <div style="display: flex; align-items: center; gap: 0.75rem;">
+        <!-- AI Assistant Button in Modal -->
+        <button class="btn btn-primary btn-sm" onclick="toggleAssistantDrawer()" title="Ask AI about this page or highlighted text">
+          ✨ دستیار مطالعه
+        </button>
+        <!-- Theme Switcher -->
+        <button class="btn btn-secondary btn-sm" onclick="toggleReaderTheme()" id="reader-theme-btn" title="Toggle Sepia Paper / Dark Mode">
+          📜 Sepia Paper
+        </button>
+        <!-- Font Size Controls -->
+        <div style="display: flex; gap: 0.25rem;">
+          <button class="btn btn-secondary btn-sm" onclick="adjustReaderFontSize(-1)" title="Smaller Font">A-</button>
+          <button class="btn btn-secondary btn-sm" onclick="adjustReaderFontSize(1)" title="Larger Font">A+</button>
+        </div>
+        <!-- Page Navigation Buttons -->
+        <button class="btn btn-secondary btn-sm" id="modal-prev-btn" onclick="navigateReadingModal(-1)" {% if page.page_number <= 1 %}disabled style="opacity: 0.5;"{% endif %}>
+          ← قبلی
+        </button>
+        <button class="btn btn-secondary btn-sm" id="modal-next-btn" onclick="navigateReadingModal(1)" {% if page.page_number >= page.total_pages %}disabled style="opacity: 0.5;"{% endif %}>
+          بعدی →
+        </button>
+        <!-- Close Button -->
+        <button class="btn btn-secondary btn-sm" onclick="closeReadingModal()" style="font-size: 1.1rem; line-height: 1;">✕</button>
+      </div>
+    </div>
+    <div id="reader-modal-body" class="reader-modal-content">
+      <!-- Formatted Vazirmatn Book Typography Content -->
+    </div>
+  </div>
+</div>
+
+<!-- Floating Selection Bubble for Instant Q&A -->
+<div id="text-selection-bubble" class="text-selection-bubble" onclick="openAssistantForSelection()">
+  ✨ پرسش از هوش مصنوعی
+</div>
+
+<!-- In-Reading AI Assistant Slide-over Drawer -->
+<div id="ai-assistant-drawer" class="ai-assistant-drawer">
+  <div class="drawer-header">
+    <div class="drawer-title">
+      <span>✨</span> دستیار هوشمند مطالعه (صفحه <span id="qa-drawer-page-num">{{ page.page_number }}</span>)
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="closeAssistantDrawer()" style="font-size: 1.1rem; line-height: 1;">✕</button>
+  </div>
+  <div class="drawer-body" id="qa-drawer-body">
+    <!-- Context Highlight Card (Visible when text is selected) -->
+    <div id="qa-selected-context-card" class="context-preview-card" style="display: none;">
+      <div class="context-preview-header">
+        <span>📌 متن انتخاب‌شده از کتاب:</span>
+        <button class="btn btn-sm btn-secondary" onclick="clearSelectedContext()" style="padding: 0.1rem 0.4rem; font-size: 0.72rem;">حذف هایلایت</button>
+      </div>
+      <div id="qa-selected-context-text" class="context-preview-text"></div>
+    </div>
+
+    <!-- Prompt Template Selector -->
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; background: #1e293b; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border);">
+      <span style="font-size: 0.8rem; color: #94a3b8; white-space: nowrap;">قالب پاسخ‌دهی:</span>
+      <select id="qa-template-select" class="form-control" style="font-size: 0.82rem; padding: 0.25rem 0.5rem; height: auto; background: #0f172a; color: #f1f5f9; border-color: var(--color-border);">
+        <!-- Populated via API -->
+      </select>
+    </div>
+
+    <!-- Q&A Conversation History List -->
+    <div id="qa-chat-list" class="qa-chat-list">
+      <div id="qa-empty-state" style="text-align: center; color: #64748b; font-size: 0.88rem; padding: 2rem 1rem;">
+        💡 سوالی درباره این صفحه دارید یا بخشی را متوجه نشده‌اید؟ متن را هایلایت کنید یا سوالتان را بپرسید!
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer-footer">
+    <!-- Quick Chips -->
+    <div class="quick-chips-row">
+      <button class="quick-chip" onclick="askQuickQuestion('این مفهوم را با زبان ساده‌تر و یک مثال توضیح بده')">💡 ساده‌تر توضیح بده</button>
+      <button class="quick-chip" onclick="askQuickQuestion('یک مثال واقعی در پروژه‌های نرم‌افزاری برای این بزن')">🔍 مثال واقعی در پروژه</button>
+      <button class="quick-chip" onclick="askQuickQuestion('این قطعه‌کد را خط به خط تحلیل کن و مزایا و معایبش را بگو')">💻 تحلیل کد</button>
+      <button class="quick-chip" onclick="askQuickQuestion('مهم‌ترین نکته کلیدی و خلاصه این بخش چیست؟')">⚡ نکته کلیدی</button>
+    </div>
+
+    <!-- Input Row -->
+    <div style="display: flex; gap: 0.5rem;">
+      <textarea id="qa-question-input" rows="2" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.88rem; resize: none; background: #0b1120; color: #f1f5f9; border-color: var(--color-border);" placeholder="سوال یا ابهام خود را درباره این صفحه بپرسید..."></textarea>
+      <button class="btn btn-primary" id="qa-send-btn" onclick="sendQAQuestion()" style="align-self: flex-end; padding: 0.6rem 0.9rem;">
+        ارسال 🚀
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const projectId = "{{ page.project_id }}";
+  const pageNumber = {{ page.page_number }};
+  let currentZoom = 1.0;
+
+  function zoomImage(delta) {
+    currentZoom = Math.max(0.4, Math.min(3.0, currentZoom + delta));
+    const img = document.getElementById('pdf-image');
+    if (img) img.style.transform = `scale(${currentZoom})`;
+  }
+
+  function resetZoom() {
+    currentZoom = 1.0;
+    const img = document.getElementById('pdf-image');
+    if (img) img.style.transform = 'scale(1.0)';
+  }
+
+  function switchTab(tab) {
+    const sourceContent = document.getElementById('tab-source-content');
+    const transContent = document.getElementById('tab-translation-content');
+    const sourceBtn = document.getElementById('tab-source-btn');
+    const transBtn = document.getElementById('tab-trans-btn');
+    const footerSource = document.getElementById('footer-source-actions');
+    const footerTrans = document.getElementById('footer-trans-actions');
+
+    if (tab === 'source') {
+      sourceContent.style.display = 'flex';
+      transContent.style.display = 'none';
+      sourceBtn.className = 'btn btn-sm btn-primary';
+      transBtn.className = 'btn btn-sm btn-secondary';
+      footerSource.style.display = 'flex';
+      footerTrans.style.display = 'none';
+    } else {
+      sourceContent.style.display = 'none';
+      transContent.style.display = 'flex';
+      sourceBtn.className = 'btn btn-sm btn-secondary';
+      transBtn.className = 'btn btn-sm btn-primary';
+      footerSource.style.display = 'none';
+      footerTrans.style.display = 'flex';
+    }
+  }
+
+  async function reExtractSourceText() {
+    const indicator = document.getElementById('save-status-indicator');
+    indicator.textContent = 'Extracting and reconstructing paragraphs...';
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${pageNumber}/re-extract`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        document.getElementById('source-text-input').value = data.source_text;
+        indicator.textContent = 'Re-extracted continuous paragraphs!';
+        setTimeout(() => indicator.textContent = '', 2500);
+      }
+    } catch (err) {
+      indicator.textContent = 'Re-extraction failed.';
+    }
+  }
+
+  async function saveSourceText() {
+    const text = document.getElementById('source-text-input').value;
+    const indicator = document.getElementById('save-status-indicator');
+    indicator.textContent = 'Saving...';
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${pageNumber}/source-text`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_text: text })
+      });
+      if (res.ok) {
+        indicator.textContent = 'Source text saved.';
+        setTimeout(() => indicator.textContent = '', 2500);
+      }
+    } catch (err) {
+      indicator.textContent = 'Save failed.';
+    }
+  }
+
+  let isPageApproved = {{ 'true' if page.status == 'APPROVED' or page.status == 'EXPORTED' else 'false' }};
+
+  async function navigateWithAutoApprove(targetUrl) {
+    const transInput = document.getElementById('translated-text-input');
+    const transText = transInput ? transInput.value.trim() : '';
+
+    // Auto-approve if page has translation draft and is not yet approved
+    if (transText && !isPageApproved) {
+      try {
+        if (window.showToast) showToast('در حال تأیید و ذخیره خودکار ترجمه صفحه...', 'info', 1500);
+        await fetch(`/api/projects/${projectId}/pages/${pageNumber}/approve-final`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ final_text: transText })
+        });
+        isPageApproved = true;
+      } catch (e) {
+        console.warn('Auto-approval error:', e);
+      }
+    }
+    window.location.href = targetUrl;
+  }
+
+  async function approveForTranslation() {
+    await saveSourceText();
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${pageNumber}/approve-for-translation`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        document.getElementById('page-status-badge').textContent = data.status;
+        document.getElementById('page-status-badge').className = 'badge badge-approved-for-trans';
+        switchTab('translation');
+        if (window.showToast) showToast('✅ متن زبان اصلی تأیید و آماده ترجمه شد.', 'success');
+      } else {
+        if (window.showToast) showToast(data.detail || 'خطا در تأیید متن اصلی.', 'error');
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطا در تأیید متن: ' + err.message, 'error');
+    }
+  }
+
+  let isReadingMode = false;
+  let readerFontSize = 1.12;
+  let isSepiaTheme = false;
+  let currentModalPage = pageNumber;
+  const totalPages = {{ page.total_pages }};
+
+  function updateModalNavButtons(p) {
+    const prevBtn = document.getElementById('modal-prev-btn');
+    const nextBtn = document.getElementById('modal-next-btn');
+    if (prevBtn) {
+      prevBtn.disabled = (p <= 1);
+      prevBtn.style.opacity = (p <= 1) ? '0.5' : '1';
+    }
+    if (nextBtn) {
+      nextBtn.disabled = (p >= totalPages);
+      nextBtn.style.opacity = (p >= totalPages) ? '0.5' : '1';
+    }
+  }
+
+  function openReadingModal() {
+    currentModalPage = pageNumber;
+    const rawText = document.getElementById('translated-text-input').value.trim();
+    if (!rawText) {
+      if (window.showToast) showToast('متن ترجمه‌ای برای مطالعه وجود ندارد. لطفاً ابتدا ترجمه کنید.', 'warning');
+      return;
+    }
+
+    const pageInfo = document.getElementById('reader-modal-page-info');
+    if (pageInfo) {
+      pageInfo.textContent = `— صفحه ${currentModalPage} از ${totalPages}`;
+    }
+    updateModalNavButtons(currentModalPage);
+
+    const modalBody = document.getElementById('reader-modal-body');
+    if (window.marked) {
+      marked.setOptions({
+        gfm: true,
+        breaks: true
+      });
+      modalBody.innerHTML = marked.parse(rawText);
+      if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(modalBody);
+    } else {
+      modalBody.innerHTML = rawText.split('\n\n').map(p => `<p>${p}</p>`).join('');
+    }
+    modalBody.scrollTop = 0;
+
+    document.getElementById('reader-modal').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  async function navigateReadingModal(delta) {
+    const targetPage = currentModalPage + delta;
+    if (targetPage < 1 || targetPage > totalPages) return;
+
+    const prevBtn = document.getElementById('modal-prev-btn');
+    const nextBtn = document.getElementById('modal-next-btn');
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+
+    // Auto-approve current page if it has translation
+    const transInput = document.getElementById('translated-text-input');
+    const transText = transInput ? transInput.value.trim() : '';
+    if (currentModalPage === pageNumber && transText && !isPageApproved) {
+      try {
+        await fetch(`/api/projects/${projectId}/pages/${pageNumber}/approve-final`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ final_text: transText })
+        });
+        isPageApproved = true;
+        const badge = document.getElementById('page-status-badge');
+        if (badge) {
+          badge.textContent = 'APPROVED';
+          badge.className = 'badge badge-approved';
+        }
+        if (window.showToast) showToast('ترجمه صفحه قبلی به صورت خودکار تأیید شد.', 'success', 2000);
+      } catch (e) {}
+    }
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${targetPage}`);
+      if (!res.ok) {
+        closeReadingModal();
+        window.location.href = `/projects/${projectId}/pages/${targetPage}`;
+        return;
+      }
+      const data = await res.json();
+      const transText = (data.approved_text || data.latest_translation || '').trim();
+
+      if (transText) {
+        // Page has translation! Display it directly in the modal
+        currentModalPage = targetPage;
+        const pageInfo = document.getElementById('reader-modal-page-info');
+        if (pageInfo) {
+          pageInfo.textContent = `— صفحه ${targetPage} از ${totalPages}`;
+        }
+
+        const modalBody = document.getElementById('reader-modal-body');
+        if (window.marked) {
+          modalBody.innerHTML = marked.parse(transText);
+          if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(modalBody);
+        } else {
+          modalBody.innerHTML = transText.split('\n\n').map(p => `<p>${p}</p>`).join('');
+        }
+        modalBody.scrollTop = 0;
+        updateModalNavButtons(targetPage);
+      } else {
+        // No translation for target page: close modal and navigate to the translation workspace flow
+        closeReadingModal();
+        window.location.href = `/projects/${projectId}/pages/${targetPage}`;
+      }
+    } catch (err) {
+      closeReadingModal();
+      window.location.href = `/projects/${projectId}/pages/${targetPage}`;
+    }
+  }
+
+  function closeReadingModal() {
+    document.getElementById('reader-modal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+  }
+
+  function toggleReaderTheme() {
+    const modal = document.getElementById('reader-modal');
+    const btn = document.getElementById('reader-theme-btn');
+    isSepiaTheme = !isSepiaTheme;
+    if (isSepiaTheme) {
+      modal.classList.add('reader-theme-sepia');
+      btn.textContent = '🌙 Dark Mode';
+    } else {
+      modal.classList.remove('reader-theme-sepia');
+      btn.textContent = '📜 Sepia Paper';
+    }
+  }
+
+  function adjustReaderFontSize(delta) {
+    readerFontSize = Math.max(0.85, Math.min(1.6, readerFontSize + delta * 0.1));
+    document.getElementById('reader-modal-body').style.fontSize = `${readerFontSize}rem`;
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeReadingModal();
+    }
+  });
+
+  function toggleReadingMode() {
+    openReadingModal();
+  }
+
+  async function startNewAIChat() {
+    try {
+      const res = await fetch('/api/browser/new-chat', { method: 'POST' });
+      const data = await res.json();
+      if (window.showToast) showToast(data.message || 'رشته گفتگوی مرورگر ریست شد و چت جدید آماده است.', 'info');
+    } catch (err) {
+      if (window.showToast) showToast('خطا در ریست گفتگو: ' + err.message, 'error');
+    }
+  }
+
+  async function triggerTranslation() {
+    const transInput = document.getElementById('translated-text-input');
+    const loadingIndicator = document.getElementById('translating-indicator');
+    const badge = document.getElementById('page-status-badge');
+    const transBtn = document.getElementById('trigger-translate-btn');
+
+    loadingIndicator.style.display = 'block';
+    transInput.style.display = 'none';
+    transBtn.disabled = true;
+    badge.textContent = 'TRANSLATING';
+    badge.className = 'badge badge-translating';
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${pageNumber}/translate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        transInput.value = data.translated_text;
+        const reader = document.getElementById('reading-mode-container');
+        if (reader && window.marked) {
+          reader.innerHTML = marked.parse(data.translated_text);
+          if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(reader);
+        }
+        badge.textContent = 'IN_REVIEW';
+        badge.className = 'badge badge-in-review';
+        if (window.showToast) showToast('🌐 ترجمه صفحه با موفقیت آماده شد.', 'success');
+      } else {
+        if (window.showToast) showToast(data.detail || 'خطا در فرآیند ترجمه.', 'error');
+        badge.textContent = 'FAILED';
+        badge.className = 'badge badge-failed';
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطای شبکه یا سرور در ترجمه: ' + err.message, 'error');
+      badge.textContent = 'FAILED';
+      badge.className = 'badge badge-failed';
+    } finally {
+      loadingIndicator.style.display = 'none';
+      if (!isReadingMode) {
+        transInput.style.display = 'block';
+      } else {
+        document.getElementById('reading-mode-container').style.display = 'block';
+      }
+      transBtn.disabled = false;
+    }
+  }
+
+  async function saveTranslationDraft() {
+    const text = document.getElementById('translated-text-input').value;
+    const indicator = document.getElementById('save-status-indicator');
+    indicator.textContent = 'Saving draft...';
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${pageNumber}/translation-draft`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draft_text: text })
+      });
+      if (res.ok) {
+        indicator.textContent = 'Draft saved.';
+        setTimeout(() => indicator.textContent = '', 2500);
+        if (window.showToast) showToast('پیش‌نویس ترجمه ذخیره شد.', 'info', 2000);
+      }
+    } catch (err) {
+      indicator.textContent = 'Failed to save draft.';
+      if (window.showToast) showToast('خطا در ذخیره پیش‌نویس.', 'error');
+    }
+  }
+
+  async function approveFinalTranslation() {
+    const text = document.getElementById('translated-text-input').value;
+    if (!text.trim()) {
+      if (window.showToast) showToast('متن ترجمه خالی است. ابتدا ترجمه را انجام دهید.', 'warning');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${pageNumber}/approve-final`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ final_text: text })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        isPageApproved = true;
+        const badge = document.getElementById('page-status-badge');
+        badge.textContent = 'APPROVED';
+        badge.className = 'badge badge-approved';
+        if (window.showToast) showToast('🌟 ترجمه صفحه با موفقیت تأیید شد!', 'success');
+      } else {
+        if (window.showToast) showToast(data.detail || 'خطا در تأیید نهایی ترجمه.', 'error');
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطا در ثبت نهایی: ' + err.message, 'error');
+    }
+  }
+
+  // Initial tab setup
+  {% if (page.status.value if page.status.value is defined else page.status) == 'READY' %}
+    switchTab('source');
+  {% else %}
+    switchTab('translation');
+  {% endif %}
+
+  // --- In-Reading Contextual AI Assistant ---
+  let selectedHighlightText = "";
+  let promptTemplates = [];
+
+  function openAssistantDrawer(customSelectedText = null) {
+    if (customSelectedText !== null) {
+      selectedHighlightText = customSelectedText.trim();
+    }
+    
+    const contextCard = document.getElementById('qa-selected-context-card');
+    const contextText = document.getElementById('qa-selected-context-text');
+    const pageNumSpan = document.getElementById('qa-drawer-page-num');
+    if (pageNumSpan) pageNumSpan.textContent = currentModalPage || pageNumber;
+
+    if (selectedHighlightText) {
+      contextText.textContent = selectedHighlightText;
+      contextCard.style.display = 'block';
+    } else {
+      contextCard.style.display = 'none';
+    }
+
+    document.getElementById('ai-assistant-drawer').classList.add('open');
+    hideSelectionBubble();
+    loadPageConversations(currentModalPage || pageNumber);
+  }
+
+  function closeAssistantDrawer() {
+    document.getElementById('ai-assistant-drawer').classList.remove('open');
+  }
+
+  function toggleAssistantDrawer() {
+    const drawer = document.getElementById('ai-assistant-drawer');
+    if (drawer.classList.contains('open')) {
+      closeAssistantDrawer();
+    } else {
+      const selection = window.getSelection().toString().trim();
+      openAssistantDrawer(selection || selectedHighlightText || null);
+    }
+  }
+
+  function clearSelectedContext() {
+    selectedHighlightText = "";
+    document.getElementById('qa-selected-context-card').style.display = 'none';
+  }
+
+  function hideSelectionBubble() {
+    const bubble = document.getElementById('text-selection-bubble');
+    if (bubble) bubble.style.display = 'none';
+  }
+
+  function openAssistantForSelection() {
+    if (selectedHighlightText) {
+      openAssistantDrawer(selectedHighlightText);
+    }
+  }
+
+  // Handle Text Selection Floating Bubble
+  function handleTextSelection(e) {
+    if (e.target.closest('#ai-assistant-drawer') || e.target.closest('#qa-question-input')) {
+      return;
+    }
+
+    setTimeout(() => {
+      const selection = window.getSelection();
+      const text = selection.toString().trim();
+      const bubble = document.getElementById('text-selection-bubble');
+
+      if (text && text.length >= 3 && !selection.isCollapsed) {
+        selectedHighlightText = text;
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+
+        bubble.style.left = `${rect.left + (rect.width / 2) + window.scrollX}px`;
+        bubble.style.top = `${rect.top + window.scrollY}px`;
+        bubble.style.display = 'flex';
+      } else {
+        hideSelectionBubble();
+      }
+    }, 50);
+  }
+
+  document.addEventListener('mouseup', handleTextSelection);
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'Escape') {
+      closeAssistantDrawer();
+      hideSelectionBubble();
+    }
+  });
+
+  // Fetch & Populate Prompt Templates
+  async function loadPromptTemplates() {
+    try {
+      const res = await fetch('/api/prompt-templates');
+      if (res.ok) {
+        promptTemplates = await res.json();
+        const select = document.getElementById('qa-template-select');
+        select.innerHTML = promptTemplates.map(t => 
+          `<option value="${t.id}" ${t.is_default ? 'selected' : ''}>${t.name}</option>`
+        ).join('');
+      }
+    } catch (err) {
+      console.error('Error loading prompt templates:', err);
+    }
+  }
+
+  // Fetch & Render Conversations for current page
+  async function loadPageConversations(pageNo) {
+    const chatList = document.getElementById('qa-chat-list');
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${pageNo}/conversations`);
+      if (res.ok) {
+        const convos = await res.json();
+        if (convos.length === 0) {
+          chatList.innerHTML = `
+            <div id="qa-empty-state" style="text-align: center; color: #64748b; font-size: 0.88rem; padding: 2rem 1rem;">
+              💡 سوالی درباره این صفحه دارید یا بخشی را متوجه نشده‌اید؟ متن را هایلایت کنید یا سوالتان را بپرسید!
+            </div>`;
+          return;
+        }
+
+        chatList.innerHTML = convos.map(c => {
+          const parsedAnswer = window.marked ? marked.parse(c.answer) : c.answer;
+          const contextSnippet = c.selected_text ? `
+            <div style="font-size: 0.76rem; color: #60a5fa; margin-bottom: 0.25rem; font-style: italic; border-right: 2px solid #3b82f6; padding-right: 0.4rem;">
+              📌 «${c.selected_text.length > 80 ? c.selected_text.substring(0, 80) + '...' : c.selected_text}»
+            </div>` : '';
+
+          return `
+            <div class="qa-message-item" id="qa-msg-${c.id}">
+              <div class="qa-user-bubble">
+                ${contextSnippet}
+                <div>❓ ${c.question}</div>
+              </div>
+              <div class="qa-ai-bubble">
+                ${parsedAnswer}
+              </div>
+              <div style="display: flex; justify-content: flex-end;">
+                <button class="btn btn-sm btn-secondary" onclick="deleteQAConversation('${c.id}')" style="font-size: 0.72rem; padding: 0.1rem 0.35rem; opacity: 0.6;">حذف</button>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        const drawerBody = document.getElementById('qa-drawer-body');
+        drawerBody.scrollTop = drawerBody.scrollHeight;
+        if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(chatList);
+      }
+    } catch (err) {
+      console.error('Error loading conversations:', err);
+    }
+  }
+
+  async function deleteQAConversation(convoId) {
+    try {
+      const res = await fetch(`/api/conversations/${convoId}`, { method: 'DELETE' });
+      if (res.ok) {
+        const item = document.getElementById(`qa-msg-${convoId}`);
+        if (item) item.remove();
+        if (window.showToast) showToast('گفتگو با موفقیت حذف شد.', 'info', 2000);
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطا در حذف گفتگو: ' + err.message, 'error');
+    }
+  }
+
+  function askQuickQuestion(questionText) {
+    document.getElementById('qa-question-input').value = questionText;
+    sendQAQuestion();
+  }
+
+  async function sendQAQuestion() {
+    const input = document.getElementById('qa-question-input');
+    const question = input.value.trim();
+    if (!question) return;
+
+    const templateSelect = document.getElementById('qa-template-select');
+    const templateId = templateSelect ? templateSelect.value : null;
+    const sendBtn = document.getElementById('qa-send-btn');
+    const chatList = document.getElementById('qa-chat-list');
+    const emptyState = document.getElementById('qa-empty-state');
+    if (emptyState) emptyState.remove();
+
+    const targetPageNo = currentModalPage || pageNumber;
+
+    // Append temporary user bubble + loading spinner
+    const tempId = 'temp-' + Date.now();
+    const contextSnippet = selectedHighlightText ? `
+      <div style="font-size: 0.76rem; color: #60a5fa; margin-bottom: 0.25rem; font-style: italic; border-right: 2px solid #3b82f6; padding-right: 0.4rem;">
+        📌 «${selectedHighlightText.length > 80 ? selectedHighlightText.substring(0, 80) + '...' : selectedHighlightText}»
+      </div>` : '';
+
+    chatList.insertAdjacentHTML('beforeend', `
+      <div class="qa-message-item" id="${tempId}">
+        <div class="qa-user-bubble">
+          ${contextSnippet}
+          <div>❓ ${question}</div>
+        </div>
+        <div class="qa-ai-bubble" style="color: #94a3b8; font-style: italic;">
+          ⏳ در حال تحلیل کانتکست و آماده‌سازی پاسخ هوش مصنوعی...
+        </div>
+      </div>
+    `);
+
+    input.value = '';
+    sendBtn.disabled = true;
+    const drawerBody = document.getElementById('qa-drawer-body');
+    drawerBody.scrollTop = drawerBody.scrollHeight;
+
+    try {
+      const res = await fetch(`/api/projects/${projectId}/pages/${targetPageNo}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: question,
+          selected_text: selectedHighlightText || null,
+          prompt_template_id: templateId
+        })
+      });
+
+      const data = await res.json();
+      const tempElement = document.getElementById(tempId);
+
+      if (res.ok && data.id) {
+        const parsedAnswer = window.marked ? marked.parse(data.answer) : data.answer;
+        if (tempElement) {
+          tempElement.id = `qa-msg-${data.id}`;
+          tempElement.querySelector('.qa-ai-bubble').innerHTML = parsedAnswer;
+          tempElement.querySelector('.qa-ai-bubble').style.color = '#f8fafc';
+          tempElement.querySelector('.qa-ai-bubble').style.fontStyle = 'normal';
+          tempElement.insertAdjacentHTML('beforeend', `
+            <div style="display: flex; justify-content: flex-end;">
+              <button class="btn btn-sm btn-secondary" onclick="deleteQAConversation('${data.id}')" style="font-size: 0.72rem; padding: 0.1rem 0.35rem; opacity: 0.6;">حذف</button>
+            </div>
+          `);
+          if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(tempElement);
+        }
+      } else {
+        if (tempElement) {
+          tempElement.querySelector('.qa-ai-bubble').innerHTML = `<span style="color: var(--color-danger);">خطا در دریافت پاسخ: ${data.detail || 'مشکل در ارتباط با مدل هوش مصنوعی'}</span>`;
+        }
+      }
+    } catch (err) {
+      const tempElement = document.getElementById(tempId);
+      if (tempElement) {
+        tempElement.querySelector('.qa-ai-bubble').innerHTML = `<span style="color: var(--color-danger);">خطای شبکه: ${err.message}</span>`;
+      }
+    } finally {
+      sendBtn.disabled = false;
+      drawerBody.scrollTop = drawerBody.scrollHeight;
+    }
+  }
+
+  // Load Prompt Templates on startup
+  loadPromptTemplates();
+</script>
+{% endblock %}

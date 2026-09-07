@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.25rem;">
+      <a href="/" style="color: var(--color-text-muted); text-decoration: none; font-size: 0.9rem;">← All Projects</a>
+    </div>
+    <h1 class="page-title">{{ project.title }}</h1>
+    <p class="page-subtitle">Source: {{ project.source_pdf_filename }} ({{ project.source_language }} → {{ project.target_language }})</p>
+  </div>
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+      <a href="/projects/{{ project.id }}/reader" class="btn btn-secondary" title="Read all translated pages continuously in book reader mode">
+        📖 Book Reader Mode
+      </a>
+      <a href="/api/projects/{{ project.id }}/export?format=docx" class="btn btn-secondary">
+        📥 Export DOCX
+      </a>
+      <a href="/api/projects/{{ project.id }}/export?format=md" class="btn btn-secondary">
+        📥 Export Markdown
+      </a>
+      <button class="btn btn-danger" onclick="deleteProject('{{ project.id }}', '{{ project.title }}')">
+        🗑️ Delete Project
+      </button>
+    </div>
+</div>
+
+<!-- Stats Row -->
+<div class="stats-row">
+  <div class="stat-box">
+    <div class="stat-label">Total Pages</div>
+    <div class="stat-value">{{ project.total_pages }}</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Ready for Review</div>
+    <div class="stat-value" style="color: #cbd5e1;">{{ project.ready_count }}</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Approved for AI</div>
+    <div class="stat-value" style="color: #60a5fa;">{{ project.approved_for_translation_count }}</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Translated / Review</div>
+    <div class="stat-value" style="color: #c084fc;">{{ project.translated_count + project.in_review_count }}</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">Fully Approved</div>
+    <div class="stat-value" style="color: #34d399;">{{ project.approved_count }}</div>
+  </div>
+</div>
+
+<!-- Pages Grid -->
+<div style="margin-top: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+    <h2>Book Pages</h2>
+    <span style="font-size: 0.9rem; color: var(--color-text-muted);">Click on any page to open HITL Workspace</span>
+  </div>
+
+  <div class="pages-grid">
+    {% for page in project.pages %}
+    <a href="/projects/{{ project.id }}/pages/{{ page.page_number }}" class="page-card">
+      <div class="page-thumbnail-box">
+        <img src="{{ page.thumbnail_url }}" alt="Page {{ page.page_number }}" class="page-thumbnail-img" loading="lazy">
+      </div>
+      <div class="page-card-footer">
+        <span class="page-card-number">Page {{ page.page_number }}</span>
+        {% if page.status == 'READY' %}
+          <span class="badge badge-ready">READY</span>
+        {% elif page.status == 'APPROVED_FOR_TRANSLATION' %}
+          <span class="badge badge-approved-for-trans">APPROVED AI</span>
+        {% elif page.status == 'TRANSLATING' %}
+          <span class="badge badge-translating">TRANSLATING</span>
+        {% elif page.status == 'TRANSLATED' or page.status == 'IN_REVIEW' %}
+          <span class="badge badge-in-review">IN REVIEW</span>
+        {% elif page.status == 'APPROVED' %}
+          <span class="badge badge-approved">APPROVED</span>
+        {% elif page.status == 'EXPORTED' %}
+          <span class="badge badge-exported">EXPORTED</span>
+        {% else %}
+          <span class="badge badge-failed">{{ page.status }}</span>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

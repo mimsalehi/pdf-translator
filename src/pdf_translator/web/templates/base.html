@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} - PDF Book Translator</title>
+  <link rel="stylesheet" href="/static/css/fonts.css?v=2.1">
+  <link rel="stylesheet" href="/static/css/app.css?v=2.1">
+  <link rel="stylesheet" href="/static/css/vendor/atom-one-dark.min.css">
+  <script src="/static/js/vendor/marked.min.js"></script>
+  <script src="/static/js/vendor/highlight.min.js"></script>
+  <script src="/static/js/app.js?v=2.1"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="navbar">
+    <a href="/" class="brand">
+      <div class="brand-icon">PT</div>
+      <span>PDF Translator</span>
+    </a>
+    <nav class="nav-links">
+      <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">Projects</a>
+      <a href="/settings" class="nav-link {% if '/settings' in request.url.path %}active{% endif %}">Profiles & API Keys</a>
+    </nav>
+  </header>
+
+  <main class="{% block container_class %}container{% endblock %}">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

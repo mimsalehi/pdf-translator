@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Translation Profiles & AI Engines</h1>
+    <p class="page-subtitle">Configure Browser Automation (ChatGPT, Gemini, Claude) or API Strategies</p>
+  </div>
+</div>
+
+{% if request.query_params.get('saved') %}
+<div style="background-color: var(--color-success-subtle); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399; padding: 0.75rem 1.25rem; border-radius: var(--radius-md); margin-bottom: 1.5rem; font-weight: 500;">
+  ✓ Settings and Translation Profile saved successfully.
+</div>
+{% endif %}
+
+<!-- Browser Session Login Card -->
+<div class="card" style="max-width: 800px; margin-bottom: 2rem; border-color: rgba(59, 130, 246, 0.3); background-color: var(--color-surface-subtle);">
+  <h2 style="font-size: 1.15rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.5rem;">
+    <span>🌐</span> Browser Automation Login (One-Time Setup)
+  </h2>
+  <p style="font-size: 0.88rem; color: var(--color-text-muted); margin-bottom: 1rem;">
+    If you use <strong>ChatGPT, Gemini, or Claude Web</strong>, click below to open the dedicated Chromium browser and log into your account. The login session remains permanently saved on your computer!
+  </p>
+  <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+    <button type="button" class="btn btn-secondary btn-sm" onclick="launchLoginBrowser('https://chatgpt.com')">
+      Open ChatGPT Login
+    </button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="launchLoginBrowser('https://gemini.google.com/app')">
+      Open Gemini Login
+    </button>
+    <button type="button" class="btn btn-secondary btn-sm" onclick="launchLoginBrowser('https://claude.ai/login')">
+      Open Claude Login
+    </button>
+  </div>
+  <span id="browser-launch-status" style="display: block; margin-top: 0.75rem; font-size: 0.85rem; color: var(--color-info);"></span>
+</div>
+
+<!-- Translation Profile Form -->
+<div class="card" style="max-width: 800px;">
+  <form method="POST" action="/settings">
+    <div class="form-group">
+      <label class="form-label" for="profile-name">Profile Name</label>
+      <input type="text" id="profile-name" name="name" class="form-control" value="{{ profile.name }}" required>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+      <div class="form-group">
+        <label class="form-label" for="provider-select">AI Translation Strategy</label>
+        <select id="provider-select" name="provider_type" class="form-control">
+          <optgroup label="🌐 Browser Automation (Chromium)">
+            <option value="browser_chatgpt" {% if profile.provider_type.value == 'browser_chatgpt' %}selected{% endif %}>ChatGPT Web (Chromium Browser)</option>
+            <option value="browser_gemini" {% if profile.provider_type.value == 'browser_gemini' %}selected{% endif %}>Google Gemini Web (Chromium Browser)</option>
+            <option value="browser_claude" {% if profile.provider_type.value == 'browser_claude' %}selected{% endif %}>Claude Web (Chromium Browser)</option>
+          </optgroup>
+          <optgroup label="⚡ Direct APIs">
+            <option value="gemini" {% if profile.provider_type.value == 'gemini' %}selected{% endif %}>Google Gemini API</option>
+            <option value="openai" {% if profile.provider_type.value == 'openai' %}selected{% endif %}>OpenAI API (GPT-4o)</option>
+            <option value="claude" {% if profile.provider_type.value == 'claude' %}selected{% endif %}>Anthropic Claude API</option>
+          </optgroup>
+          <optgroup label="🧪 Offline Development">
+            <option value="mock" {% if profile.provider_type.value == 'mock' %}selected{% endif %}>Offline Mock Engine</option>
+          </optgroup>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="model-name-input">Model Name / Description</label>
+        <input type="text" id="model-name-input" name="model_name" class="form-control" value="{{ profile.model_name }}" placeholder="e.g. gpt-4o, gemini-1.5-pro, claude-3-5" required>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="api-key-input">API Key (Required ONLY for Direct API strategy)</label>
+      <input type="password" id="api-key-input" name="api_key" class="form-control" placeholder="{% if profile.api_key %}•••••••••••••••• (Leave blank to keep existing key){% else %}Paste your AI API Key here (Not needed for Browser mode){% endif %}">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="temp-input">Temperature (0.0 to 1.0)</label>
+      <input type="number" id="temp-input" name="temperature" class="form-control" value="{{ profile.temperature }}" step="0.05" min="0.0" max="1.0">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" for="prompt-textarea">Translation System Prompt Rules</label>
+      <textarea id="prompt-textarea" name="system_prompt" class="text-editor-textarea" style="min-height: 220px; font-size: 0.92rem; line-height: 1.6;" required>{{ profile.system_prompt }}</textarea>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; margin-top: 1.5rem;">
+      <button type="submit" class="btn btn-primary">Save Profile Settings</button>
+    </div>
+  </form>
+</div>
+
+<!-- Prompt Templates Management Card -->
+<div class="card" style="max-width: 800px; margin-top: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div>
+      <h2 style="font-size: 1.15rem; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span>✨</span> قالب‌های پرامپت دستیار هوشمند مطالعه (Prompt Templates)
+      </h2>
+      <p style="font-size: 0.85rem; color: var(--color-text-muted); margin: 0;">
+        قالب‌های آماده برای پاسخ‌دهی هوش مصنوعی هنگام مطالعه کتاب با متغیرهای <code>{selected_text}</code>، <code>{page_text}</code> و <code>{question}</code>
+      </p>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="openNewTemplateModal()">
+      ➕ افزودن قالب جدید
+    </button>
+  </div>
+
+  <div id="templates-list-container" style="display: flex; flex-direction: column; gap: 1rem;">
+    <!-- Populated dynamically via JS -->
+    <div style="text-align: center; color: var(--color-text-muted); padding: 1.5rem;">در حال بارگذاری قالب‌ها...</div>
+  </div>
+</div>
+
+<!-- Add/Edit Prompt Template Modal -->
+<div id="template-modal" class="reader-modal-overlay" style="display: none;">
+  <div class="reader-modal-dialog" style="max-width: 650px; max-height: 90vh;">
+    <div class="reader-modal-header" style="direction: rtl;">
+      <strong id="template-modal-title" style="font-size: 1.05rem;">قالب پرامپت</strong>
+      <button class="btn btn-secondary btn-sm" onclick="closeTemplateModal()" style="font-size: 1.1rem; line-height: 1;">✕</button>
+    </div>
+    <div class="reader-modal-content" style="direction: rtl; padding: 1.5rem;">
+      <form id="template-form" onsubmit="saveTemplateForm(event)">
+        <input type="hidden" id="template-id-input">
+
+        <div class="form-group">
+          <label class="form-label" for="tpl-name-input">عنوان قالب (نام نمایشی)</label>
+          <input type="text" id="tpl-name-input" class="form-control" placeholder="مثلاً: 🧑‍🏫 استاد معمار نرم‌افزار" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="tpl-desc-input">توضیح کوتاه</label>
+          <input type="text" id="tpl-desc-input" class="form-control" placeholder="توضیح کاربرد این پرامپت...">
+        </div>
+
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+            <label class="form-label" style="margin: 0;" for="tpl-body-input">متن پرامپت</label>
+            <div style="display: flex; gap: 0.35rem;">
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.72rem; padding: 0.15rem 0.4rem;" onclick="insertTplVar('{selected_text}')">+ {selected_text}</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.72rem; padding: 0.15rem 0.4rem;" onclick="insertTplVar('{page_text}')">+ {page_text}</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.72rem; padding: 0.15rem 0.4rem;" onclick="insertTplVar('{question}')">+ {question}</button>
+            </div>
+          </div>
+          <textarea id="tpl-body-input" rows="8" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.88rem; line-height: 1.6; background: #0b1120; color: #f1f5f9;" required></textarea>
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+          <input type="checkbox" id="tpl-default-input" style="cursor: pointer;">
+          <label for="tpl-default-input" style="font-size: 0.9rem; cursor: pointer; user-select: none; margin: 0;">تنظیم به عنوان قالب پیش‌فرض</label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeTemplateModal()">انصراف</button>
+          <button type="submit" class="btn btn-primary">ذخیره قالب</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  async function launchLoginBrowser(url) {
+    const status = document.getElementById('browser-launch-status');
+    status.textContent = `Opening browser for ${url}... Please log in there.`;
+    try {
+      const formData = new FormData();
+      formData.append('target_url', url);
+      const res = await fetch('/api/browser/launch-login', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok) {
+        status.textContent = `Browser window launched for ${url}. Once logged in, your session stays active!`;
+      }
+    } catch (err) {
+      status.textContent = 'Error launching browser: ' + err.message;
+    }
+  }
+
+  // --- Prompt Templates Management ---
+  let promptTemplatesList = [];
+
+  async function loadSettingsPromptTemplates() {
+    const container = document.getElementById('templates-list-container');
+    try {
+      const res = await fetch('/api/prompt-templates');
+      if (res.ok) {
+        promptTemplatesList = await res.json();
+        if (promptTemplatesList.length === 0) {
+          container.innerHTML = '<div style="text-align: center; color: var(--color-text-muted); padding: 1.5rem;">هیچ قالبی ثبت نشده است.</div>';
+          return;
+        }
+
+        container.innerHTML = promptTemplatesList.map(t => `
+          <div style="background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; direction: rtl;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+                <strong style="font-size: 1rem; color: #f1f5f9;">${t.name}</strong>
+                ${t.is_default ? '<span class="badge badge-ready" style="font-size: 0.72rem;">پیش‌فرض</span>' : ''}
+              </div>
+              ${t.description ? `<p style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.5rem 0;">${t.description}</p>` : ''}
+              <div style="background: #0b1120; border-radius: var(--radius-sm); padding: 0.6rem 0.85rem; font-size: 0.8rem; color: #cbd5e1; white-space: pre-wrap; max-height: 90px; overflow-y: auto; font-family: 'Vazirmatn', sans-serif;">${t.template}</div>
+            </div>
+            <div style="display: flex; gap: 0.35rem;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="openEditTemplateModal('${t.id}')">ویرایش</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="deleteSettingsTemplate('${t.id}')" style="color: var(--color-danger);">حذف</button>
+            </div>
+          </div>
+        `).join('');
+      }
+    } catch (err) {
+      container.innerHTML = '<div style="color: var(--color-danger); padding: 1rem;">خطا در بارگذاری قالب‌ها.</div>';
+    }
+  }
+
+  function openNewTemplateModal() {
+    document.getElementById('template-id-input').value = '';
+    document.getElementById('tpl-name-input').value = '';
+    document.getElementById('tpl-desc-input').value = '';
+    document.getElementById('tpl-body-input').value = `شما یک دستیار هوشمند مطالعه هستید.\n\nمتن مورد سوال:\n"""\n{selected_text}\n"""\n\nکانتکست صفحه:\n"""\n{page_text}\n"""\n\nسوال:\n{question}\n\nپاسخ را با زبان فارسی روان و مثال کاربردی ارائه دهید.`;
+    document.getElementById('tpl-default-input').checked = false;
+    document.getElementById('template-modal-title').textContent = '➕ افزودن قالب پرامپت جدید';
+    document.getElementById('template-modal').style.display = 'flex';
+  }
+
+  function openEditTemplateModal(tplId) {
+    const tpl = promptTemplatesList.find(t => t.id === tplId);
+    if (!tpl) return;
+
+    document.getElementById('template-id-input').value = tpl.id;
+    document.getElementById('tpl-name-input').value = tpl.name;
+    document.getElementById('tpl-desc-input').value = tpl.description || '';
+    document.getElementById('tpl-body-input').value = tpl.template;
+    document.getElementById('tpl-default-input').checked = tpl.is_default;
+    document.getElementById('template-modal-title').textContent = `✏️ ویرایش قالب: ${tpl.name}`;
+    document.getElementById('template-modal').style.display = 'flex';
+  }
+
+  function closeTemplateModal() {
+    document.getElementById('template-modal').style.display = 'none';
+  }
+
+  function insertTplVar(varName) {
+    const textarea = document.getElementById('tpl-body-input');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    textarea.value = text.substring(0, start) + varName + text.substring(end);
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = start + varName.length;
+  }
+
+  async function saveTemplateForm(e) {
+    e.preventDefault();
+    const id = document.getElementById('template-id-input').value;
+    const name = document.getElementById('tpl-name-input').value.trim();
+    const description = document.getElementById('tpl-desc-input').value.trim();
+    const template = document.getElementById('tpl-body-input').value.trim();
+    const is_default = document.getElementById('tpl-default-input').checked;
+
+    const payload = { name, description, template, is_default };
+
+    try {
+      let res;
+      if (id) {
+        res = await fetch(`/api/prompt-templates/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await fetch('/api/prompt-templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      if (res.ok) {
+        closeTemplateModal();
+        loadSettingsPromptTemplates();
+        if (window.showToast) showToast('قالب پرامپت با موفقیت ذخیره شد.', 'success');
+      } else {
+        const err = await res.json();
+        if (window.showToast) showToast('خطا در ذخیره قالب: ' + (err.detail || 'مشکل در سرور'), 'error');
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطای شبکه: ' + err.message, 'error');
+    }
+  }
+
+  async function deleteSettingsTemplate(tplId) {
+    try {
+      const res = await fetch(`/api/prompt-templates/${tplId}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadSettingsPromptTemplates();
+        if (window.showToast) showToast('قالب با موفقیت حذف شد.', 'info');
+      } else {
+        if (window.showToast) showToast('خطا در حذف قالب.', 'error');
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطای شبکه: ' + err.message, 'error');
+    }
+  }
+
+  // Load templates on page load
+  loadSettingsPromptTemplates();
+</script>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div style="max-width: 900px; margin: 0 auto; padding-bottom: 4rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem;">
+    <div>
+      <a href="/projects/{{ project.id }}" style="font-size: 0.88rem; color: var(--color-primary); text-decoration: none; margin-bottom: 0.25rem; display: inline-block;">
+        ← بازگشت به پروژه
+      </a>
+      <h1 class="page-title" style="font-size: 1.5rem; margin-bottom: 0.25rem;">{{ project.title }}</h1>
+      <p class="page-subtitle">{{ project.source_language }} → {{ project.target_language }} (حالت مطالعه کتاب)</p>
+    </div>
+    <div style="display: flex; gap: 0.75rem;">
+      <a href="/api/projects/{{ project.id }}/export?format=docx" class="btn btn-secondary btn-sm">
+        📥 دانلود نسخه DOCX
+      </a>
+      <a href="/api/projects/{{ project.id }}/export?format=md" class="btn btn-secondary btn-sm">
+        📥 دانلود مارک‌داون
+      </a>
+    </div>
+  </div>
+
+  {% set translated_pages = [] %}
+  {% for p in pages %}
+    {% if p.approved_text or p.latest_translation %}
+      {% set _ = translated_pages.append(p) %}
+    {% endif %}
+  {% endfor %}
+
+  {% if translated_pages %}
+    {% for page in translated_pages %}
+      <div style="margin-bottom: 3rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; color: var(--color-text-dim); font-size: 0.88rem; border-bottom: 1px dashed var(--color-border-subtle); padding-bottom: 0.35rem;">
+          <span style="font-weight: 700; color: var(--color-primary);">صفحه {{ page.page_number }}</span>
+          <a href="/projects/{{ project.id }}/pages/{{ page.page_number }}" style="color: var(--color-primary); text-decoration: none; font-size: 0.82rem;">
+            ✏️ ویرایش در Workspace ↗
+          </a>
+        </div>
+        <div class="reading-book-paper markdown-content" data-raw="{{ page.approved_text or page.latest_translation }}">
+          {{ page.approved_text or page.latest_translation }}
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state">
+      <h2 class="empty-state-title">هنوز صفحه‌ای ترجمه نشده است</h2>
+      <p class="empty-state-text">لطفاً ابتدا از محیط پروژه، صفحات را با دکمه Translate with AI ترجمه کنید.</p>
+      <a href="/projects/{{ project.id }}" class="btn btn-primary">بازگشت به پروژه</a>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.marked) {
+      marked.setOptions({
+        gfm: true,
+        breaks: true
+      });
+    }
+    document.querySelectorAll('.markdown-content').forEach(el => {
+      const raw = el.getAttribute('data-raw');
+      if (raw && window.marked) {
+        el.innerHTML = marked.parse(raw);
+      }
+    });
+  });
+</script>
+{% endblock %}
