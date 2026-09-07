@@ -143,3 +143,108 @@ async def test_ask_page_question_with_context_injection(qa_test_env):
     history = service.list_page_conversations("proj-123", 5)
     assert len(history) == 1
     assert history[0].id == convo.id
+
+@pytest.mark.asyncio
+async def test_ask_page_question_unmasks_image_blocks(qa_test_env, monkeypatch):
+    service = qa_test_env["service"]
+    page = qa_test_env["page"]
+    page.source_text = "Here is an architecture diagram:\n![Architecture](/api/projects/proj-123/pages/5/images/1)"
+    qa_test_env["session"].add(page)
+    qa_test_env["session"].commit()
+
+    # Mock provider to return an answer referencing the image placeholder
+    captured_system_prompt = []
+    async def mock_translate(*args, **kwargs):
+        captured_system_prompt.append(kwargs.get("system_prompt", ""))
+        return "همانطور که در [[IMAGE_BLOCK_0]] می‌بینید، فرمول به صورت $$E = mc^2$$ است."
+
+    from pdf_translator.adapters.providers.mock_provider import MockTranslationProvider
+    monkeypatch.setattr(MockTranslationProvider, "translate", mock_translate)
+
+    dto = PageAskDTO(
+        question="این دیاگرام را توضیح بده",
+        selected_text=None,
+    )
+
+    convo = await service.ask_page_question("proj-123", 5, dto)
+    # Verify image block is restored
+    assert "![Architecture](/api/projects/proj-123/pages/5/images/1)" in convo.answer
+    assert "[[IMAGE_BLOCK_0]]" not in convo.answer
+    assert "$$E = mc^2$$" in convo.answer
+
+    # Verify system prompt has LaTeX instruction
+    assert len(captured_system_prompt) == 1
+    assert "LaTeX" in captured_system_prompt[0]
+    assert "$$" in captured_system_prompt[0]
+
+
+@pytest.mark.asyncio
+async def test_ask_page_question_fallback_image_replacement(qa_test_env, monkeypatch):
+    service = qa_test_env["service"]
+    page = qa_test_env["page"]
+    page.source_text = "Text without explicit markdown image tags"
+    qa_test_env["session"].add(page)
+    qa_test_env["session"].commit()
+
+    async def mock_translate(*args, **kwargs):
+        return "پاسخ شامل [[IMAGE_BLOCK_0]] است."
+
+    from pdf_translator.adapters.providers.mock_provider import MockTranslationProvider
+    monkeypatch.setattr(MockTranslationProvider, "translate", mock_translate)
+
+    dto = PageAskDTO(question="تست تصویر")
+    convo = await service.ask_page_question("proj-123", 5, dto)
+    assert "![تصویر 1](/api/projects/proj-123/pages/5/images/1)" in convo.answer
+    assert "[[IMAGE_BLOCK_0]]" not in convo.answer
+
+
+@pytest.mark.asyncio
+async def test_ask_page_question_follow_up_without_new_highlight(qa_test_env, monkeypatch):
+    service = qa_test_env["service"]
+
+    captured_prompts = []
+    captured_system_prompts = []
+
+    async def mock_translate(*args, **kwargs):
+        captured_prompts.append(kwargs.get("source_text", ""))
+        captured_system_prompts.append(kwargs.get("system_prompt", ""))
+        if len(captured_prompts) == 1:
+            return "پاسخ سوال اول: این الگو کلاس‌های ناسازگار را سازگار می‌کند."
+        return "پاسخ سوال دوم: در ادامه، مزیت اصلی کاهش وابستگی است."
+
+    from pdf_translator.adapters.providers.mock_provider import MockTranslationProvider
+    monkeypatch.setattr(MockTranslationProvider, "translate", mock_translate)
+
+    # 1. Ask initial question with a specific highlight
+    dto1 = PageAskDTO(
+        question="این بخش چه مفهومی دارد؟",
+        selected_text="مفهوم کلیدی آداپتور",
+    )
+    convo1 = await service.ask_page_question("proj-123", 5, dto1)
+    assert convo1.selected_text == "مفهوم کلیدی آداپتور"
+    assert "مفهوم کلیدی آداپتور" in captured_prompts[0]
+
+    # 2. Ask follow-up question WITHOUT any new highlight
+    dto2 = PageAskDTO(
+        question="چه مزایای دیگری دارد؟",
+        selected_text=None,
+    )
+    convo2 = await service.ask_page_question("proj-123", 5, dto2)
+
+    # Verification:
+    # A. The follow-up record does NOT save an old or fake highlight
+    assert convo2.selected_text is None
+
+    # B. The prompt for follow-up includes prior conversation history
+    prompt2 = captured_prompts[1]
+    assert "تاریخچه گفتگوی قبلی" in prompt2
+    assert "این بخش چه مفهومی دارد؟" in prompt2
+    assert "پاسخ سوال اول" in prompt2
+    assert "چه مزایای دیگری دارد؟" in prompt2
+
+    # C. The prompt does NOT contain an old {selected_text} block or (کل صفحه / بدون هایلایت خاص)
+    assert "(کل صفحه / بدون هایلایت خاص)" not in prompt2
+    assert "متن مورد سوال از کتاب" not in prompt2
+
+    # D. System prompt contains instruction for logical continuation
+    assert "در ادامه سوال و پاسخ‌های قبلی" in captured_system_prompts[1]

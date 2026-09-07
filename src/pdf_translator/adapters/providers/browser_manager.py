@@ -23,18 +23,47 @@ def sanitize_markdown_code_blocks(md_text: str) -> str:
     return re.sub(r'(```[a-zA-Z0-9_-]*\n)(.*?)(```)', clean_code, md_text, flags=re.DOTALL)
 
 def find_chrome_executable() -> str:
-    """Finds Google Chrome or Chromium executable on the host system."""
-    possible_paths = [
-        "/usr/bin/google-chrome",
-        "/usr/bin/google-chrome-stable",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/chromium",
-        "/snap/bin/chromium",
-    ]
-    for p in possible_paths:
-        if os.path.exists(p):
-            return p
-    return shutil.which("google-chrome") or shutil.which("chromium") or "google-chrome"
+    """Finds Google Chrome, Chromium, or Edge executable on Windows, Linux, and macOS."""
+    import sys
+    if sys.platform == "win32":
+        win_candidates = [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+            os.path.expandvars(r"%LocalAppData%\Microsoft\Edge\Application\msedge.exe"),
+        ]
+        for p in win_candidates:
+            if os.path.exists(p):
+                return p
+        return shutil.which("chrome") or shutil.which("msedge") or "chrome"
+
+    elif sys.platform == "darwin":
+        mac_candidates = [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+            os.path.expanduser("~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+        ]
+        for p in mac_candidates:
+            if os.path.exists(p):
+                return p
+        return shutil.which("google-chrome") or "google-chrome"
+
+    else:
+        linux_candidates = [
+            "/usr/bin/google-chrome",
+            "/usr/bin/google-chrome-stable",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/chromium",
+            "/snap/bin/chromium",
+            "/usr/bin/brave-browser",
+        ]
+        for p in linux_candidates:
+            if os.path.exists(p):
+                return p
+        return shutil.which("google-chrome") or shutil.which("chromium") or "google-chrome"
 
 def convert_chat_html_to_markdown(html_content: str) -> str:
     """
@@ -126,12 +155,23 @@ class BrowserManager:
             "--start-maximized",
             start_url,
         ]
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        import sys
+        popen_kwargs = {
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if sys.platform == "win32":
+            # Windows detached process flags
+            creation_flags = 0
+            if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+                creation_flags |= subprocess.CREATE_NEW_PROCESS_GROUP
+            if hasattr(subprocess, "DETACHED_PROCESS"):
+                creation_flags |= subprocess.DETACHED_PROCESS
+            popen_kwargs["creationflags"] = creation_flags
+        else:
+            popen_kwargs["start_new_session"] = True
+
+        subprocess.Popen(cmd, **popen_kwargs)
 
     async def _clean_disconnect(self):
         """Cleanly disconnects and resets Playwright / Browser instances upon closed transport."""
@@ -160,8 +200,15 @@ class BrowserManager:
             await self._clean_disconnect()
 
         if self._playwright is None:
-            self._playwright = await async_playwright().start()
-
+            try:
+                self._playwright = await async_playwright().start()
+            except NotImplementedError as e:
+                raise RuntimeError(
+                    "خطای NotImplementedError در اتصال به مرورگر در سیستم‌عامل ویندوز رخ داده است.\n"
+                    "علت: اجرای سرور با فلگ --reload در ویندوز باعث فعال شدن SelectorEventLoop می‌شود که از subprocess پشتیبانی نمی‌کند.\n"
+                    "راه‌حل: لطفاً سرور را بدون --reload اجرا کنید:\n"
+                    "python -m pdf_translator.main یا uvicorn pdf_translator.web.app:app"
+                ) from e
         # Connect to port 9222
         try:
             self._browser = await self._playwright.chromium.connect_over_cdp(self.cdp_url, timeout=2000)
@@ -176,7 +223,8 @@ class BrowserManager:
                     pass
 
         if self._browser is None:
-            raise RuntimeError("Could not connect to Google Chrome on port 9222. Please start Chrome with ./launch_chrome_ai.sh")
+            hint = "launch_chrome_ai.bat" if sys.platform == "win32" else "./launch_chrome_ai.sh"
+            raise RuntimeError(f"Could not connect to Google Chrome on port 9222. Please start Chrome with {hint}")
 
     async def get_or_create_page(self, domain_keyword: str, default_url: str, force_new_chat: bool = False) -> PlaywrightPage:
         """Connects over CDP and retrieves the active tab without stealing focus with auto-reconnect."""

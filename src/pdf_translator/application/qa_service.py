@@ -1,7 +1,8 @@
 """Application service for In-Reading AI Assistant and Prompt Template management."""
+import re
+from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
-
 from pdf_translator.domain.entities import (
     PageConversation,
     PromptTemplate,
@@ -35,6 +36,10 @@ from pdf_translator.adapters.providers.openai_provider import OpenAIProvider
 from pdf_translator.adapters.providers.gemini_provider import GeminiProvider
 from pdf_translator.adapters.providers.claude_provider import ClaudeProvider
 from pdf_translator.adapters.providers.browser_provider import BrowserTranslationProvider
+from pdf_translator.application.translation_service import (
+    unmask_image_blocks,
+    unmask_code_blocks,
+)
 
 
 class QAService:
@@ -171,9 +176,45 @@ class QAService:
 
         # 1. Determine the relevant text of this page for rich context
         page_text = (page.approved_text or page.latest_translation or page.source_text or "").strip()
-        selected_text = (dto.selected_text or "").strip()
-        if not selected_text:
-            selected_text = "(کل صفحه / بدون هایلایت خاص)"
+
+        # Check for new highlight vs follow-up question
+        has_new_highlight = bool(dto.selected_text and dto.selected_text.strip())
+        selected_text = dto.selected_text.strip() if has_new_highlight else ""
+
+        # Retrieve previous conversation history on this page for continuation context
+        previous_convos = self.page_conversation_repo.list_by_page(project_id, page_number)
+        history_text = ""
+        if previous_convos:
+            history_lines = []
+            for c in previous_convos[-4:]:  # last 4 turns
+                snippet_hint = f" (نقل‌قول مربوطه: «{c.selected_text[:60]}...»)" if c.selected_text else ""
+                history_lines.append(f"کاربر: {c.question}{snippet_hint}\nپاسخ دستیار: {c.answer}")
+            history_text = "\n\n".join(history_lines)
+
+        # Collect image blocks from source text and translations
+        image_blocks = []
+        img_pattern = r'!\[[\s\S]*?\]\(.*?\)'
+        for source_candidate in [page.source_text, page.latest_translation, page.approved_text]:
+            if source_candidate:
+                for block in re.findall(img_pattern, source_candidate):
+                    if block not in image_blocks:
+                        image_blocks.append(block)
+
+        # If no explicit image blocks in text, check for embedded image files on disk
+        if not image_blocks and project.storage_dir:
+            images_dir = Path(project.storage_dir) / "images"
+            if images_dir.exists():
+                for f in sorted(images_dir.glob(f"page_{page_number}_img_*.png")):
+                    m = re.search(r'_img_(\d+)\.png$', f.name)
+                    if m:
+                        i_idx = m.group(1)
+                        img_tag = f"![Figure {i_idx}](/api/projects/{project_id}/pages/{page_number}/images/{i_idx})"
+                        if img_tag not in image_blocks:
+                            image_blocks.append(img_tag)
+
+        # If page_text still contains unmasked tokens, resolve them for context
+        if image_blocks and ("IMAGE_BLOCK" in page_text or "تصویر_بلوک" in page_text):
+            page_text = unmask_image_blocks(page_text, image_blocks, page.source_text or "")
 
         # 2. Get prompt template
         template_obj = None
@@ -182,28 +223,76 @@ class QAService:
         if not template_obj:
             template_obj = self.prompt_template_repo.get_default()
 
-        if template_obj:
-            prompt_raw = template_obj.template
-            final_prompt = (
-                prompt_raw
-                .replace("{selected_text}", selected_text)
-                .replace("{page_text}", page_text)
-                .replace("{question}", dto.question.strip())
-            )
-        else:
-            final_prompt = f"""متن مورد سوال:
+        if has_new_highlight:
+            # Case A: User explicitly selected a new text snippet
+            full_context = page_text
+            if history_text:
+                full_context += f"\n\nتاریخچه گفتگوی قبلی در این صفحه:\n\"\"\"\n{history_text}\n\"\"\""
+
+            if template_obj:
+                prompt_raw = template_obj.template
+                final_prompt = (
+                    prompt_raw
+                    .replace("{selected_text}", selected_text)
+                    .replace("{page_text}", full_context)
+                    .replace("{question}", dto.question.strip())
+                )
+            else:
+                final_prompt = f"""متن مورد سوال از کتاب:
 \"\"\"
 {selected_text}
 \"\"\"
 
 کانتکست صفحه:
 \"\"\"
+{full_context}
+\"\"\"
+
+سوال:
+{dto.question.strip()}"""
+        else:
+            # Case B: Follow-up question (no new highlight) - do NOT inject old highlight
+            full_context = page_text
+            if history_text:
+                full_context += f"\n\nتاریخچه گفتگوی قبلی در این صفحه (پاسخ باید در ادامه گفتگوی قبلی باشد):\n\"\"\"\n{history_text}\n\"\"\""
+
+            if template_obj:
+                prompt_raw = template_obj.template
+                # Remove the {selected_text} block so no old or blank quote is injected
+                prompt_clean = re.sub(
+                    r'(?:\n|^)[^\n]*?(?:متن مورد سوال|کد یا متن مورد سوال|متن مورد سوال از کتاب)[^\n]*?\n*"""\s*\{selected_text\}\s*"""\n*',
+                    '\n',
+                    prompt_raw,
+                    flags=re.IGNORECASE
+                )
+                prompt_clean = prompt_clean.replace("{selected_text}", "")
+                final_prompt = (
+                    prompt_clean
+                    .replace("{page_text}", full_context)
+                    .replace("{question}", dto.question.strip())
+                )
+            else:
+                if history_text:
+                    final_prompt = f"""کانتکست صفحه:
+\"\"\"
+{page_text}
+\"\"\"
+
+تاریخچه گفتگوی قبلی در این صفحه:
+\"\"\"
+{history_text}
+\"\"\"
+
+سوال جدید کاربر (در ادامه گفتگوی بالا):
+{dto.question.strip()}"""
+                else:
+                    final_prompt = f"""کانتکست صفحه:
+\"\"\"
 {page_text}
 \"\"\"
 
 سوال:
 {dto.question.strip()}"""
-
         # 3. Resolve profile & provider
         profile = None
         if project.profile_id:
@@ -213,19 +302,49 @@ class QAService:
 
         provider = self._resolve_provider(profile)
 
-        # 4. Execute AI generation
+        # 4. Execute AI generation with explicit LaTeX and structure prompt
+        system_prompt = (
+            "شما یک دستیار هوشمند، دقیق و منتور آموزشی برای مطالعه کتاب هستید.\n"
+            "- در صورت وجود تاریخچه گفتگوی قبلی، پاسخ را به صورت منسجم و در ادامه سوال و پاسخ‌های قبلی ارائه دهید و از تکرار مجدد مقدمات خودداری نمایید.\n"
+            "- فرمول‌های ریاضی و علمی را حتماً با استانداردهای LaTeX بنویسید (برای فرمول‌های درون‌خطی از $...$ و برای فرمول‌های مستقل/بلوکی از $$...$$ استفاده کنید).\n"
+            "- ساختار پاسخ را بسیار زیبا و خوانا با عناوین، بولت‌پوینت‌ها و بلوک‌های کد مناسب قالب‌بندی کنید.\n"
+            "- در صورت ارجاع به تصاویر یا نمودارهای صفحه، از تگ‌های مارک‌داون تصویر موجود در کانتکست مانند ![نام تصویر](/api/projects/.../images/...) استفاده کنید."
+        )
+
         answer = await provider.translate(
             source_text=final_prompt,
             source_language=project.source_language,
             target_language=project.target_language,
-            system_prompt="شما یک دستیار هوشمند و منتور آموزشی برای مطالعه کتاب هستید.",
+            system_prompt=system_prompt,
         )
 
+        # 5. Restore/unmask images in AI answer if referenced as placeholders
+        if image_blocks:
+            answer = unmask_image_blocks(answer, image_blocks, page.source_text or "")
+
+        # Fallback substitution for any remaining [[IMAGE_BLOCK_i]] patterns
+        def _fallback_image_replace(match):
+            idx_str = match.group(1)
+            persian_to_eng = {"۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9"}
+            eng_num = "".join(persian_to_eng.get(ch, ch) for ch in idx_str)
+            try:
+                val = int(eng_num)
+                img_no = val + 1
+            except ValueError:
+                img_no = 1
+            return f"\n\n![تصویر {img_no}](/api/projects/{project_id}/pages/{page_number}/images/{img_no})\n\n"
+
+        answer = re.sub(
+            r"`*\[\s*\[\s*[\u200e\u200f\u200c]*(?:IMAGE[\s\\_]+BLOCK|تصویر|تصویر_بلوک|عکس)[\s\\_]+([0-9۰-۹]+)[\u200e\u200f\u200c]*\s*\]\s*\]`*",
+            _fallback_image_replace,
+            answer,
+            flags=re.IGNORECASE,
+        )
         # 5. Save conversation record
         convo = PageConversation(
             project_id=project_id,
             page_number=page_number,
-            selected_text=dto.selected_text if dto.selected_text else None,
+            selected_text=selected_text if has_new_highlight else None,
             question=dto.question.strip(),
             answer=answer.strip(),
             prompt_template_id=template_obj.id if template_obj else None,

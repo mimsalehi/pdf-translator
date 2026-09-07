@@ -206,7 +206,7 @@
           بعدی →
         </button>
         <!-- Close Button -->
-        <button class="btn btn-secondary btn-sm" onclick="closeReadingModal()" style="font-size: 1.1rem; line-height: 1;">✕</button>
+        <button class="btn btn-secondary btn-sm" id="close-reader-modal-btn" onclick="closeReadingModal()" title="بستن حالت مطالعه (Esc)" style="font-size: 1.1rem; line-height: 1;">✕</button>
       </div>
     </div>
     <div id="reader-modal-body" class="reader-modal-content">
@@ -223,10 +223,18 @@
 <!-- In-Reading AI Assistant Slide-over Drawer -->
 <div id="ai-assistant-drawer" class="ai-assistant-drawer">
   <div class="drawer-header">
-    <div class="drawer-title">
-      <span>✨</span> دستیار هوشمند مطالعه (صفحه <span id="qa-drawer-page-num">{{ page.page_number }}</span>)
+    <div class="drawer-title" title="دستیار هوشمند مطالعه">
+      <span>✨</span> دستیار مطالعه (ص <span id="qa-drawer-page-num">{{ page.page_number }}</span>)
     </div>
-    <button class="btn btn-secondary btn-sm" onclick="closeAssistantDrawer()" style="font-size: 1.1rem; line-height: 1;">✕</button>
+    <div class="drawer-header-actions">
+      <button class="qa-control-btn" onclick="adjustQAZoom(-0.1)" title="کوچک‌نمایی اندازه متن (A-)">A-</button>
+      <span class="qa-zoom-badge" id="qa-zoom-indicator" onclick="resetQAZoom()" title="بازنشانی اندازه قلم به ۱۰۰٪">100%</span>
+      <button class="qa-control-btn" onclick="adjustQAZoom(0.1)" title="بزرگ‌نمایی اندازه متن (A+)">A+</button>
+      <button class="qa-control-btn" id="qa-fullscreen-btn" onclick="toggleAssistantFullscreen()" title="نمایش تمام‌صفحه (Fullscreen)">
+        ⛶
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="closeAssistantDrawer()" title="بستن دستیار" style="font-size: 1.1rem; line-height: 1; padding: 0.25rem 0.55rem;">✕</button>
+    </div>
   </div>
   <div class="drawer-body" id="qa-drawer-body">
     <!-- Context Highlight Card (Visible when text is selected) -->
@@ -264,13 +272,25 @@
     </div>
 
     <!-- Input Row -->
-    <div style="display: flex; gap: 0.5rem;">
-      <textarea id="qa-question-input" rows="2" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.88rem; resize: none; background: #0b1120; color: #f1f5f9; border-color: var(--color-border);" placeholder="سوال یا ابهام خود را درباره این صفحه بپرسید..."></textarea>
-      <button class="btn btn-primary" id="qa-send-btn" onclick="sendQAQuestion()" style="align-self: flex-end; padding: 0.6rem 0.9rem;">
-        ارسال 🚀
-      </button>
+    <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+      <div style="display: flex; gap: 0.5rem;">
+        <textarea id="qa-question-input" rows="2" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.95rem; resize: none; background: #0b1120; color: #f1f5f9; border-color: var(--color-border); line-height: 1.5;" placeholder="سوال یا ابهام خود را درباره این صفحه بپرسید... (Enter برای ارسال، Shift+Enter برای خط بعد)"></textarea>
+        <button class="btn btn-primary" id="qa-send-btn" onclick="sendQAQuestion()" style="align-self: flex-end; padding: 0.65rem 1.15rem; font-weight: 600; white-space: nowrap;">
+          ارسال
+        </button>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #64748b; padding: 0 0.25rem;">
+        <span>💡 کلید <b>Enter</b> برای ارسال | <b>Shift + Enter</b> برای خط جدید</span>
+        <span style="font-style: italic;">Esc برای خروج از تمام‌صفحه / بستن</span>
+      </div>
     </div>
   </div>
+</div>
+
+<!-- QA Image Lightbox Modal -->
+<div id="qa-image-lightbox" class="qa-image-lightbox" onclick="closeImageLightbox(event)">
+  <button class="qa-image-lightbox-close" onclick="closeImageLightbox(event)" title="بستن (Esc)">✕</button>
+  <img id="qa-lightbox-img" src="" alt="Full Preview">
 </div>
 {% endblock %}
 
@@ -437,6 +457,19 @@
         breaks: true
       });
       modalBody.innerHTML = marked.parse(rawText);
+      if (window.renderMathInElement) {
+        try {
+          renderMathInElement(modalBody, {
+            delimiters: [
+              {left: '$$', right: '$$', display: true},
+              {left: '$', right: '$', display: false},
+              {left: '\\(', right: '\\)', display: false},
+              {left: '\\[', right: '\\]', display: true}
+            ],
+            throwOnError: false
+          });
+        } catch (e) {}
+      }
       if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(modalBody);
     } else {
       modalBody.innerHTML = rawText.split('\n\n').map(p => `<p>${p}</p>`).join('');
@@ -497,6 +530,19 @@
         const modalBody = document.getElementById('reader-modal-body');
         if (window.marked) {
           modalBody.innerHTML = marked.parse(transText);
+          if (window.renderMathInElement) {
+            try {
+              renderMathInElement(modalBody, {
+                delimiters: [
+                  {left: '$$', right: '$$', display: true},
+                  {left: '$', right: '$', display: false},
+                  {left: '\\(', right: '\\)', display: false},
+                  {left: '\\[', right: '\\]', display: true}
+                ],
+                throwOnError: false
+              });
+            } catch (e) {}
+          }
           if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(modalBody);
         } else {
           modalBody.innerHTML = transText.split('\n\n').map(p => `<p>${p}</p>`).join('');
@@ -665,7 +711,160 @@
   // --- In-Reading Contextual AI Assistant ---
   let selectedHighlightText = "";
   let promptTemplates = [];
+  let qaZoomLevel = 1.0;
+  let isAssistantFullscreen = false;
 
+  function initQAZoom() {
+    const saved = localStorage.getItem('qa_zoom_scale');
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed >= 0.75 && parsed <= 2.0) {
+        qaZoomLevel = parsed;
+      }
+    }
+    applyQAZoom();
+  }
+
+  function applyQAZoom() {
+    const drawer = document.getElementById('ai-assistant-drawer');
+    if (drawer) {
+      drawer.style.setProperty('--qa-zoom-scale', qaZoomLevel.toString());
+    }
+    const indicator = document.getElementById('qa-zoom-indicator');
+    if (indicator) {
+      indicator.textContent = `${Math.round(qaZoomLevel * 100)}%`;
+    }
+  }
+
+  function adjustQAZoom(delta) {
+    qaZoomLevel = Math.max(0.75, Math.min(2.0, Math.round((qaZoomLevel + delta) * 100) / 100));
+    applyQAZoom();
+    localStorage.setItem('qa_zoom_scale', qaZoomLevel.toString());
+  }
+
+  function resetQAZoom() {
+    qaZoomLevel = 1.0;
+    applyQAZoom();
+    localStorage.setItem('qa_zoom_scale', '1.0');
+  }
+
+  function toggleAssistantFullscreen() {
+    const drawer = document.getElementById('ai-assistant-drawer');
+    const btn = document.getElementById('qa-fullscreen-btn');
+    if (!drawer) return;
+
+    isAssistantFullscreen = !isAssistantFullscreen;
+    if (isAssistantFullscreen) {
+      drawer.classList.add('is-fullscreen');
+      if (btn) {
+        btn.textContent = '🗗';
+        btn.title = 'خروج از حالت تمام‌صفحه (Esc)';
+      }
+    } else {
+      drawer.classList.remove('is-fullscreen');
+      if (btn) {
+        btn.textContent = '⛶';
+        btn.title = 'نمایش تمام‌صفحه (Fullscreen)';
+      }
+    }
+  }
+
+  // --- QA Image Lightbox Modal ---
+  function openImageLightbox(src, alt) {
+    const lightbox = document.getElementById('qa-image-lightbox');
+    const img = document.getElementById('qa-lightbox-img');
+    if (lightbox && img) {
+      img.src = src;
+      img.alt = alt || 'Preview';
+      lightbox.classList.add('active');
+    }
+  }
+
+  function closeImageLightbox(e) {
+    if (e && e.target && e.target.tagName === 'IMG') return;
+    const lightbox = document.getElementById('qa-image-lightbox');
+    if (lightbox) {
+      lightbox.classList.remove('active');
+    }
+  }
+
+  // --- Rich Markdown, KaTeX LaTeX Formulas & Image Parser ---
+  function renderAssistantContent(rawText, container) {
+    if (!rawText) {
+      container.innerHTML = '';
+      return;
+    }
+
+    const targetPage = currentModalPage || pageNumber;
+    let processed = rawText;
+
+    // 1. Unmask any [[IMAGE_BLOCK_i]] or [[تصویر i]] to real markdown images
+    processed = processed.replace(/`*\[\s*\[\s*[\u200e\u200f\u200c]*(?:IMAGE[\s\\_]+BLOCK|تصویر|تصویر_بلوک|عکس)[\s\\_]+([0-9۰-۹]+)[\u200e\u200f\u200c]*\s*\]\s*\]`*/gi, (match, p1) => {
+      const persianToEng = {"۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9"};
+      const engNum = p1.replace(/[۰-۹]/g, d => persianToEng[d] || d);
+      const imgIdx = parseInt(engNum, 10) + 1;
+      return `\n\n![تصویر ${imgIdx}](/api/projects/${projectId}/pages/${targetPage}/images/${imgIdx})\n\n`;
+    });
+
+    // 2. Parse Markdown
+    let html = window.marked ? marked.parse(processed) : processed;
+    container.innerHTML = html;
+
+    // 3. Render LaTeX Math formulas via KaTeX Auto-Render
+    if (window.renderMathInElement) {
+      try {
+        renderMathInElement(container, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false},
+            {left: '\\(', right: '\\)', display: false},
+            {left: '\\[', right: '\\]', display: true}
+          ],
+          throwOnError: false,
+          ignoredTags: ['script', 'noscript', 'style', 'textarea']
+        });
+      } catch (err) {
+        console.warn('KaTeX auto-render error:', err);
+      }
+    }
+
+    // 4. Render any ```math or ```latex code blocks into KaTeX display blocks
+    if (window.katex) {
+      container.querySelectorAll('pre code.language-latex, pre code.language-math, pre code.language-equation').forEach(codeBlock => {
+        try {
+          const mathText = codeBlock.textContent.trim();
+          const div = document.createElement('div');
+          div.className = 'katex-display-block';
+          katex.render(mathText, div, { displayMode: true, throwOnError: false });
+          const pre = codeBlock.closest('pre');
+          if (pre) pre.replaceWith(div);
+        } catch (err) {
+          console.warn('KaTeX code block error:', err);
+        }
+      });
+    }
+
+    // 5. Enhance code blocks (syntax highlighting & copy buttons)
+    if (window.enhanceCodeBlocks) {
+      window.enhanceCodeBlocks(container);
+    }
+
+    // 6. Enhance rendered images with lightbox & fallback
+    container.querySelectorAll('img').forEach(img => {
+      img.classList.add('qa-rendered-image');
+      img.loading = 'lazy';
+      img.title = 'کلیک برای بزرگ‌نمایی تصویر';
+      img.addEventListener('click', () => {
+        openImageLightbox(img.src, img.alt);
+      });
+      img.addEventListener('error', function() {
+        const fallback = document.createElement('div');
+        fallback.className = 'qa-image-fallback';
+        fallback.innerHTML = `🖼️ <span>${img.alt || 'تصویر بخش مورد نظر'}</span> <a href="${img.src}" target="_blank" style="color:#60a5fa; font-size:0.8rem; margin-right:0.5rem;">(مشاهده تصویر)</a>`;
+        img.replaceWith(fallback);
+      });
+    });
+  }
   function openAssistantDrawer(customSelectedText = null) {
     if (customSelectedText !== null) {
       selectedHighlightText = customSelectedText.trim();
@@ -746,6 +945,16 @@
   document.addEventListener('mouseup', handleTextSelection);
   document.addEventListener('keyup', (e) => {
     if (e.key === 'Escape') {
+      const lightbox = document.getElementById('qa-image-lightbox');
+      if (lightbox && lightbox.classList.contains('active')) {
+        closeImageLightbox();
+        return;
+      }
+      const drawer = document.getElementById('ai-assistant-drawer');
+      if (drawer && drawer.classList.contains('is-fullscreen')) {
+        toggleAssistantFullscreen();
+        return;
+      }
       closeAssistantDrawer();
       hideSelectionBubble();
     }
@@ -782,32 +991,33 @@
           return;
         }
 
-        chatList.innerHTML = convos.map(c => {
-          const parsedAnswer = window.marked ? marked.parse(c.answer) : c.answer;
+        chatList.innerHTML = '';
+        convos.forEach(c => {
           const contextSnippet = c.selected_text ? `
             <div style="font-size: 0.76rem; color: #60a5fa; margin-bottom: 0.25rem; font-style: italic; border-right: 2px solid #3b82f6; padding-right: 0.4rem;">
               📌 «${c.selected_text.length > 80 ? c.selected_text.substring(0, 80) + '...' : c.selected_text}»
             </div>` : '';
 
-          return `
-            <div class="qa-message-item" id="qa-msg-${c.id}">
-              <div class="qa-user-bubble">
-                ${contextSnippet}
-                <div>❓ ${c.question}</div>
-              </div>
-              <div class="qa-ai-bubble">
-                ${parsedAnswer}
-              </div>
-              <div style="display: flex; justify-content: flex-end;">
-                <button class="btn btn-sm btn-secondary" onclick="deleteQAConversation('${c.id}')" style="font-size: 0.72rem; padding: 0.1rem 0.35rem; opacity: 0.6;">حذف</button>
-              </div>
+          const itemDiv = document.createElement('div');
+          itemDiv.className = 'qa-message-item';
+          itemDiv.id = `qa-msg-${c.id}`;
+          itemDiv.innerHTML = `
+            <div class="qa-user-bubble">
+              ${contextSnippet}
+              <div>❓ ${c.question}</div>
+            </div>
+            <div class="qa-ai-bubble" id="qa-bubble-${c.id}"></div>
+            <div style="display: flex; justify-content: flex-end;">
+              <button class="btn btn-sm btn-secondary" onclick="deleteQAConversation('${c.id}')" style="font-size: 0.72rem; padding: 0.1rem 0.35rem; opacity: 0.6;">حذف</button>
             </div>
           `;
-        }).join('');
+          chatList.appendChild(itemDiv);
+          const aiBubble = itemDiv.querySelector('.qa-ai-bubble');
+          renderAssistantContent(c.answer, aiBubble);
+        });
 
         const drawerBody = document.getElementById('qa-drawer-body');
         drawerBody.scrollTop = drawerBody.scrollHeight;
-        if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(chatList);
       }
     } catch (err) {
       console.error('Error loading conversations:', err);
@@ -845,12 +1055,13 @@
     if (emptyState) emptyState.remove();
 
     const targetPageNo = currentModalPage || pageNumber;
+    const currentSnippet = selectedHighlightText ? selectedHighlightText.trim() : null;
 
     // Append temporary user bubble + loading spinner
     const tempId = 'temp-' + Date.now();
-    const contextSnippet = selectedHighlightText ? `
+    const contextSnippet = currentSnippet ? `
       <div style="font-size: 0.76rem; color: #60a5fa; margin-bottom: 0.25rem; font-style: italic; border-right: 2px solid #3b82f6; padding-right: 0.4rem;">
-        📌 «${selectedHighlightText.length > 80 ? selectedHighlightText.substring(0, 80) + '...' : selectedHighlightText}»
+        📌 «${currentSnippet.length > 80 ? currentSnippet.substring(0, 80) + '...' : currentSnippet}»
       </div>` : '';
 
     chatList.insertAdjacentHTML('beforeend', `
@@ -866,6 +1077,8 @@
     `);
 
     input.value = '';
+    // Consume the highlight context so follow-up questions continue naturally
+    clearSelectedContext();
     sendBtn.disabled = true;
     const drawerBody = document.getElementById('qa-drawer-body');
     drawerBody.scrollTop = drawerBody.scrollHeight;
@@ -876,7 +1089,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           question: question,
-          selected_text: selectedHighlightText || null,
+          selected_text: currentSnippet,
           prompt_template_id: templateId
         })
       });
@@ -885,18 +1098,17 @@
       const tempElement = document.getElementById(tempId);
 
       if (res.ok && data.id) {
-        const parsedAnswer = window.marked ? marked.parse(data.answer) : data.answer;
         if (tempElement) {
           tempElement.id = `qa-msg-${data.id}`;
-          tempElement.querySelector('.qa-ai-bubble').innerHTML = parsedAnswer;
-          tempElement.querySelector('.qa-ai-bubble').style.color = '#f8fafc';
-          tempElement.querySelector('.qa-ai-bubble').style.fontStyle = 'normal';
+          const aiBubble = tempElement.querySelector('.qa-ai-bubble');
+          aiBubble.style.color = '#f8fafc';
+          aiBubble.style.fontStyle = 'normal';
+          renderAssistantContent(data.answer, aiBubble);
           tempElement.insertAdjacentHTML('beforeend', `
             <div style="display: flex; justify-content: flex-end;">
               <button class="btn btn-sm btn-secondary" onclick="deleteQAConversation('${data.id}')" style="font-size: 0.72rem; padding: 0.1rem 0.35rem; opacity: 0.6;">حذف</button>
             </div>
           `);
-          if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(tempElement);
         }
       } else {
         if (tempElement) {
@@ -914,7 +1126,19 @@
     }
   }
 
-  // Load Prompt Templates on startup
+  // Setup Enter key submission & Shift+Enter newline for QA input
+  const qaInput = document.getElementById('qa-question-input');
+  if (qaInput) {
+    qaInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendQAQuestion();
+      }
+    });
+  }
+
+  // Load Prompt Templates & init zoom on startup
   loadPromptTemplates();
+  initQAZoom();
 </script>
 {% endblock %}

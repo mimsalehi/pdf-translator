@@ -1,5 +1,13 @@
 """Main FastAPI Application Entrypoint."""
+import sys
+import asyncio
 from pathlib import Path
+
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    except Exception:
+        pass
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pdf_translator.config import settings

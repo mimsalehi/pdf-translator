@@ -16,8 +16,8 @@ class Settings(BaseModel):
 
     def get_db_url(self) -> str:
         if self.sqlite_db_path:
-            return f"sqlite:///{self.sqlite_db_path}"
+            return f"sqlite:///{Path(self.sqlite_db_path).as_posix()}"
         db_path = self.get_data_dir() / "pdf_translator.db"
-        return f"sqlite:///{db_path}"
+        return f"sqlite:///{db_path.as_posix()}"
 
 settings = Settings()
