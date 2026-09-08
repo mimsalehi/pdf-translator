@@ -1,21 +1,59 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div style="max-width: 900px; margin: 0 auto; padding-bottom: 4rem;">
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid var(--color-border); padding-bottom: 1rem;">
-    <div>
-      <a href="/projects/{{ project.id }}" style="font-size: 0.88rem; color: var(--color-primary); text-decoration: none; margin-bottom: 0.25rem; display: inline-block;">
-        ← بازگشت به پروژه
+<div id="book-reader-wrapper" class="book-reader-wrapper">
+  <!-- Sticky Book Reader Controls Toolbar -->
+  <div class="book-reader-toolbar">
+    <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+      <a href="/projects/{{ project.id }}" class="btn btn-secondary btn-sm" style="text-decoration: none;" title="بازگشت به پیشخوان پروژه">
+        ← بازگشت
       </a>
-      <h1 class="page-title" style="font-size: 1.5rem; margin-bottom: 0.25rem;">{{ project.title }}</h1>
-      <p class="page-subtitle">{{ project.source_language }} → {{ project.target_language }} (حالت مطالعه کتاب)</p>
+      <div>
+        <h1 class="page-title" style="font-size: 1.15rem; margin-bottom: 0; display: inline-block;">{{ project.title }}</h1>
+        <span style="font-size: 0.8rem; color: var(--reader-text-muted); margin-right: 0.5rem;">
+          ({{ project.source_language }} → {{ project.target_language }})
+        </span>
+      </div>
     </div>
-    <div style="display: flex; gap: 0.75rem;">
-      <a href="/api/projects/{{ project.id }}/export?format=docx" class="btn btn-secondary btn-sm">
-        📥 دانلود نسخه DOCX
+
+    <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+      <!-- Theme Selector Picker -->
+      <div class="reader-theme-picker" id="book-reader-theme-picker">
+        <button type="button" class="theme-chip theme-chip-dark active" data-theme="dark" onclick="setReaderTheme('dark')" title="حالت شب گرم (Warm Velvet Night)">
+          <span class="theme-dot" style="background: #1e1e22; border: 1px solid #d4a359;"></span>
+          <span>شب گرم</span>
+        </button>
+        <button type="button" class="theme-chip theme-chip-paper" data-theme="paper" onclick="setReaderTheme('paper')" title="حالت کاغذ کتاب (Warm Cream Paper)">
+          <span class="theme-dot" style="background: #fdfbf7; border: 1px solid #c4b89b;"></span>
+          <span>کاغذ کتاب</span>
+        </button>
+        <button type="button" class="theme-chip theme-chip-sepia" data-theme="sepia" onclick="setReaderTheme('sepia')" title="حالت سپیا (Vintage Parchment)">
+          <span class="theme-dot" style="background: #faf4e7; border: 1px solid #b45309;"></span>
+          <span>سپیا</span>
+        </button>
+        <button type="button" class="theme-chip theme-chip-sage" data-theme="sage" onclick="setReaderTheme('sage')" title="حالت آرامش چشم (Calm Sage Green)">
+          <span class="theme-dot" style="background: #f3f7f0; border: 1px solid #2e6b4d;"></span>
+          <span>آرامش</span>
+        </button>
+      </div>
+
+      <!-- Font Size Controls -->
+      <div style="display: flex; gap: 0.2rem;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="adjustBookFontSize(-1)" title="کوچک‌تر کردن متن (A-)">A-</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="adjustBookFontSize(1)" title="بزرگ‌تر کردن متن (A+)">A+</button>
+      </div>
+
+      <!-- Reading Width Toggle -->
+      <button type="button" class="btn btn-secondary btn-sm" id="btn-toggle-width" onclick="toggleBookWidth()" title="تغییر عرض صفحه مطالعه">
+        ↔ عرض
+      </button>
+
+      <!-- Downloads -->
+      <a href="/api/projects/{{ project.id }}/export?format=docx" class="btn btn-secondary btn-sm" title="دانلود کل کتاب با فرمت Word">
+        📥 Word
       </a>
-      <a href="/api/projects/{{ project.id }}/export?format=md" class="btn btn-secondary btn-sm">
-        📥 دانلود مارک‌داون
+      <a href="/api/projects/{{ project.id }}/export?format=md" class="btn btn-secondary btn-sm" title="دانلود مارک‌داون">
+        📥 MD
       </a>
     </div>
   </div>
@@ -29,10 +67,10 @@
 
   {% if translated_pages %}
     {% for page in translated_pages %}
-      <div style="margin-bottom: 3rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; color: var(--color-text-dim); font-size: 0.88rem; border-bottom: 1px dashed var(--color-border-subtle); padding-bottom: 0.35rem;">
-          <span style="font-weight: 700; color: var(--color-primary);">صفحه {{ page.page_number }}</span>
-          <a href="/projects/{{ project.id }}/pages/{{ page.page_number }}" style="color: var(--color-primary); text-decoration: none; font-size: 0.82rem;">
+      <div style="margin-bottom: 3.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; color: var(--reader-text-muted); font-size: 0.88rem; border-bottom: 1px dashed var(--reader-border-subtle); padding-bottom: 0.35rem;">
+          <span style="font-weight: 700; color: var(--reader-accent);">صفحه {{ page.page_number }}</span>
+          <a href="/projects/{{ project.id }}/pages/{{ page.page_number }}" style="color: var(--reader-link); text-decoration: none; font-size: 0.82rem;">
             ✏️ ویرایش در Workspace ↗
           </a>
         </div>
@@ -42,9 +80,9 @@
       </div>
     {% endfor %}
   {% else %}
-    <div class="empty-state">
-      <h2 class="empty-state-title">هنوز صفحه‌ای ترجمه نشده است</h2>
-      <p class="empty-state-text">لطفاً ابتدا از محیط پروژه، صفحات را با دکمه Translate with AI ترجمه کنید.</p>
+    <div class="empty-state" style="background: var(--reader-surface); border: 1px solid var(--reader-border); border-radius: var(--radius-md); padding: 3rem; text-align: center; color: var(--reader-text);">
+      <h2 class="empty-state-title" style="color: var(--reader-h1);">هنوز صفحه‌ای ترجمه نشده است</h2>
+      <p class="empty-state-text" style="color: var(--reader-text-muted); margin-bottom: 1.5rem;">لطفاً ابتدا از محیط پروژه، صفحات را با دکمه Translate with AI ترجمه کنید.</p>
       <a href="/projects/{{ project.id }}" class="btn btn-primary">بازگشت به پروژه</a>
     </div>
   {% endif %}
@@ -53,19 +91,89 @@
 
 {% block extra_scripts %}
 <script>
+  let bookFontSize = 1.06;
+  try {
+    const savedSize = parseFloat(localStorage.getItem('pdf_translator_book_fontsize'));
+    if (savedSize && !isNaN(savedSize)) bookFontSize = savedSize;
+  } catch(e) {}
+
+  function adjustBookFontSize(delta) {
+    bookFontSize = Math.max(0.85, Math.min(1.5, bookFontSize + delta * 0.08));
+    document.querySelectorAll('.reading-book-paper').forEach(el => {
+      el.style.fontSize = `${bookFontSize}rem`;
+    });
+    try {
+      localStorage.setItem('pdf_translator_book_fontsize', bookFontSize);
+    } catch(e) {}
+  }
+
+  function toggleBookWidth() {
+    const wrapper = document.getElementById('book-reader-wrapper');
+    if (!wrapper) return;
+    wrapper.classList.toggle('reader-width-wide');
+    const isWide = wrapper.classList.contains('reader-width-wide');
+    try {
+      localStorage.setItem('pdf_translator_book_wide', isWide ? '1' : '0');
+    } catch(e) {}
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    // 1. Restore wide preference
+    try {
+      if (localStorage.getItem('pdf_translator_book_wide') === '1') {
+        const wrapper = document.getElementById('book-reader-wrapper');
+        if (wrapper) wrapper.classList.add('reader-width-wide');
+      }
+    } catch(e) {}
+
+    // 2. Setup marked & markdown parsing
     if (window.marked) {
       marked.setOptions({
         gfm: true,
         breaks: true
       });
     }
+
     document.querySelectorAll('.markdown-content').forEach(el => {
       const raw = el.getAttribute('data-raw');
       if (raw && window.marked) {
         el.innerHTML = marked.parse(raw);
+        if (window.renderMathInElement) {
+          try {
+            renderMathInElement(el, {
+              delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true}
+              ],
+              throwOnError: false
+            });
+          } catch (e) {}
+        }
+        if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(el);
+      }
+      if (bookFontSize !== 1.06) {
+        el.style.fontSize = `${bookFontSize}rem`;
       }
     });
+
+    // 3. Apply active theme
+    if (window.applyReaderTheme && window.getSavedReaderTheme) {
+      window.applyReaderTheme(window.getSavedReaderTheme());
+    }
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+    if (e.key === 't' || e.key === 'T') {
+      if (window.cycleReaderTheme) window.cycleReaderTheme();
+    } else if (e.key === '+' || e.key === '=') {
+      adjustBookFontSize(1);
+    } else if (e.key === '-' || e.key === '_') {
+      adjustBookFontSize(-1);
+    }
   });
 </script>
 {% endblock %}

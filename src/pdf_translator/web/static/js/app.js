@@ -294,3 +294,101 @@ function deleteProject(projectId, projectTitle = '') {
 window.promptDeleteProject = promptDeleteProject;
 window.executeDeleteProject = executeDeleteProject;
 window.deleteProject = deleteProject;
+
+// --- Reading Mode Themes & Appearance Manager ---
+const READER_THEMES = ['dark', 'paper', 'sepia', 'sage'];
+const DEFAULT_READER_THEME = 'dark';
+
+function getSavedReaderTheme() {
+  try {
+    const saved = localStorage.getItem('pdf_translator_reader_theme');
+    if (saved && READER_THEMES.includes(saved)) return saved;
+  } catch (e) {}
+  return DEFAULT_READER_THEME;
+}
+
+function setReaderTheme(theme) {
+  if (!READER_THEMES.includes(theme)) theme = DEFAULT_READER_THEME;
+  try {
+    localStorage.setItem('pdf_translator_reader_theme', theme);
+  } catch (e) {}
+  applyReaderTheme(theme);
+}
+
+function cycleReaderTheme() {
+  const current = getSavedReaderTheme();
+  const nextIdx = (READER_THEMES.indexOf(current) + 1) % READER_THEMES.length;
+  setReaderTheme(READER_THEMES[nextIdx]);
+}
+
+function applyReaderTheme(theme) {
+  if (!READER_THEMES.includes(theme)) theme = DEFAULT_READER_THEME;
+  const themeClass = `reader-theme-${theme}`;
+
+  // 1. Apply to reader modal dialog & overlay if present
+  const modal = document.getElementById('reader-modal');
+  if (modal) {
+    const dialog = modal.querySelector('.reader-modal-dialog') || modal;
+    READER_THEMES.forEach(t => {
+      modal.classList.remove(`reader-theme-${t}`);
+      dialog.classList.remove(`reader-theme-${t}`);
+    });
+    modal.classList.add(themeClass);
+    dialog.classList.add(themeClass);
+  }
+
+  // 2. Apply to chapter modals if present
+  const chapterDialog = document.getElementById('view-chapter-dialog');
+  if (chapterDialog) {
+    READER_THEMES.forEach(t => {
+      chapterDialog.classList.remove(`reader-theme-${t}`);
+      if (chapterDialog.parentElement) chapterDialog.parentElement.classList.remove(`reader-theme-${t}`);
+    });
+    chapterDialog.classList.add(themeClass);
+    if (chapterDialog.parentElement) chapterDialog.parentElement.classList.add(themeClass);
+  }
+  // 3. Apply to workspace inline reading paper
+  const inlineReader = document.getElementById('reading-mode-container');
+  if (inlineReader) {
+    READER_THEMES.forEach(t => inlineReader.classList.remove(`reader-theme-${t}`));
+    inlineReader.classList.add(themeClass);
+  }
+
+  // 4. Apply to book_reader wrapper
+  const bookReaderWrapper = document.getElementById('book-reader-wrapper');
+  if (bookReaderWrapper) {
+    READER_THEMES.forEach(t => bookReaderWrapper.classList.remove(`reader-theme-${t}`));
+    bookReaderWrapper.classList.add(themeClass);
+    
+    // Also update body background on full book reader view
+    READER_THEMES.forEach(t => document.body.classList.remove(`reader-page-theme-${t}`));
+    document.body.classList.add(`reader-page-theme-${theme}`);
+  }
+
+  // 5. Apply to all .reading-book-paper cards
+  document.querySelectorAll('.reading-book-paper').forEach(el => {
+    READER_THEMES.forEach(t => el.classList.remove(`reader-theme-${t}`));
+    el.classList.add(themeClass);
+  });
+
+  // 6. Update active states on any theme chip buttons in UI
+  document.querySelectorAll('.theme-chip').forEach(chip => {
+    if (chip.getAttribute('data-theme') === theme) {
+      chip.classList.add('active');
+    } else {
+      chip.classList.remove('active');
+    }
+  });
+}
+
+// Auto-initialize reading theme on page load
+document.addEventListener('DOMContentLoaded', () => {
+  const currentTheme = getSavedReaderTheme();
+  applyReaderTheme(currentTheme);
+});
+
+window.READER_THEMES = READER_THEMES;
+window.getSavedReaderTheme = getSavedReaderTheme;
+window.setReaderTheme = setReaderTheme;
+window.cycleReaderTheme = cycleReaderTheme;
+window.applyReaderTheme = applyReaderTheme;

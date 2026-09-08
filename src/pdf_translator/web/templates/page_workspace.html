@@ -189,10 +189,25 @@
         <button class="btn btn-primary btn-sm" onclick="toggleAssistantDrawer()" title="Ask AI about this page or highlighted text">
           ✨ دستیار مطالعه
         </button>
-        <!-- Theme Switcher -->
-        <button class="btn btn-secondary btn-sm" onclick="toggleReaderTheme()" id="reader-theme-btn" title="Toggle Sepia Paper / Dark Mode">
-          📜 Sepia Paper
-        </button>
+        <!-- Reading Mode Theme Picker -->
+        <div class="reader-theme-picker" id="modal-reader-theme-picker">
+          <button type="button" class="theme-chip theme-chip-dark active" data-theme="dark" onclick="setReaderTheme('dark')" title="حالت شب گرم (Warm Velvet Night)">
+            <span class="theme-dot" style="background: #1e1e22; border: 1px solid #d4a359;"></span>
+            <span>شب گرم</span>
+          </button>
+          <button type="button" class="theme-chip theme-chip-paper" data-theme="paper" onclick="setReaderTheme('paper')" title="حالت کاغذ کتاب (Warm Cream Paper)">
+            <span class="theme-dot" style="background: #fdfbf7; border: 1px solid #c4b89b;"></span>
+            <span>کاغذ کتاب</span>
+          </button>
+          <button type="button" class="theme-chip theme-chip-sepia" data-theme="sepia" onclick="setReaderTheme('sepia')" title="حالت سپیا (Vintage Parchment)">
+            <span class="theme-dot" style="background: #faf4e7; border: 1px solid #b45309;"></span>
+            <span>سپیا</span>
+          </button>
+          <button type="button" class="theme-chip theme-chip-sage" data-theme="sage" onclick="setReaderTheme('sage')" title="حالت آرامش چشم (Calm Sage Green)">
+            <span class="theme-dot" style="background: #f3f7f0; border: 1px solid #2e6b4d;"></span>
+            <span>آرامش</span>
+          </button>
+        </div>
         <!-- Font Size Controls -->
         <div style="display: flex; gap: 0.25rem;">
           <button class="btn btn-secondary btn-sm" onclick="adjustReaderFontSize(-1)" title="Smaller Font">A-</button>
@@ -475,11 +490,14 @@
       modalBody.innerHTML = rawText.split('\n\n').map(p => `<p>${p}</p>`).join('');
     }
     modalBody.scrollTop = 0;
+    modalBody.style.fontSize = `${readerFontSize}rem`;
+    if (window.applyReaderTheme && window.getSavedReaderTheme) {
+      window.applyReaderTheme(window.getSavedReaderTheme());
+    }
 
     document.getElementById('reader-modal').style.display = 'flex';
     document.body.style.overflow = 'hidden';
   }
-
   async function navigateReadingModal(delta) {
     const targetPage = currentModalPage + delta;
     if (targetPage < 1 || targetPage > totalPages) return;
@@ -566,26 +584,34 @@
   }
 
   function toggleReaderTheme() {
-    const modal = document.getElementById('reader-modal');
-    const btn = document.getElementById('reader-theme-btn');
-    isSepiaTheme = !isSepiaTheme;
-    if (isSepiaTheme) {
-      modal.classList.add('reader-theme-sepia');
-      btn.textContent = '🌙 Dark Mode';
-    } else {
-      modal.classList.remove('reader-theme-sepia');
-      btn.textContent = '📜 Sepia Paper';
+    if (window.cycleReaderTheme) {
+      window.cycleReaderTheme();
     }
   }
 
   function adjustReaderFontSize(delta) {
     readerFontSize = Math.max(0.85, Math.min(1.6, readerFontSize + delta * 0.1));
-    document.getElementById('reader-modal-body').style.fontSize = `${readerFontSize}rem`;
+    const modalBody = document.getElementById('reader-modal-body');
+    if (modalBody) modalBody.style.fontSize = `${readerFontSize}rem`;
+    try {
+      localStorage.setItem('pdf_translator_reader_fontsize', readerFontSize);
+    } catch (e) {}
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
+    const modal = document.getElementById('reader-modal');
+    const isModalOpen = modal && modal.style.display === 'flex';
+    
+    if (e.key === 'Escape' && isModalOpen) {
       closeReadingModal();
+    } else if (isModalOpen && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+      if (e.key === 't' || e.key === 'T') {
+        if (window.cycleReaderTheme) window.cycleReaderTheme();
+      } else if (e.key === '+' || e.key === '=') {
+        adjustReaderFontSize(1);
+      } else if (e.key === '-' || e.key === '_') {
+        adjustReaderFontSize(-1);
+      }
     }
   });
 
