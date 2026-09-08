@@ -178,3 +178,63 @@ class PageConversationRepositoryPort(ABC):
     def delete(self, conversation_id: str) -> bool:
         pass
 
+
+class ChapterSummaryRepositoryPort(ABC):
+    """Port for ChapterSummary persistence."""
+
+    @abstractmethod
+    def save(self, summary: "ChapterSummary") -> "ChapterSummary":
+        pass
+
+    @abstractmethod
+    def get_by_id(self, summary_id: str) -> Optional["ChapterSummary"]:
+        pass
+
+    @abstractmethod
+    def list_by_project(self, project_id: str) -> List["ChapterSummary"]:
+        pass
+
+    @abstractmethod
+    def delete(self, summary_id: str) -> bool:
+        pass
+
+
+class ChapterPromptTemplateRepositoryPort(ABC):
+    """Port for ChapterPromptTemplate persistence."""
+
+    @abstractmethod
+    def save(self, template: "ChapterPromptTemplate") -> "ChapterPromptTemplate":
+        pass
+
+    @abstractmethod
+    def get_by_id(self, template_id: str) -> Optional["ChapterPromptTemplate"]:
+        pass
+
+    @abstractmethod
+    def get_default(self) -> Optional["ChapterPromptTemplate"]:
+        pass
+
+    @abstractmethod
+    def list_all(self) -> List["ChapterPromptTemplate"]:
+        pass
+
+    @abstractmethod
+    def delete(self, template_id: str) -> bool:
+        pass
+
+
+class ChapterConversationRepositoryPort(ABC):
+    """Port for Chapter Q&A Conversation persistence."""
+
+    @abstractmethod
+    def save(self, conversation: "ChapterConversation") -> "ChapterConversation":
+        pass
+
+    @abstractmethod
+    def list_by_chapter(self, chapter_summary_id: str, section_index: Optional[int] = None) -> List["ChapterConversation"]:
+        pass
+
+    @abstractmethod
+    def delete(self, conversation_id: str) -> bool:
+        pass
+

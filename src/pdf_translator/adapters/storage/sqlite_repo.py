@@ -3,11 +3,14 @@ from typing import List, Optional
 from sqlmodel import Session, select
 from pdf_translator.domain.entities import (
     Project, Page, TranslationProfile, TranslationAttempt, GlossaryItem,
-    PromptTemplate, PageConversation
+    PromptTemplate, PageConversation, ChapterSummary, ChapterPromptTemplate,
+    ChapterConversation
 )
 from pdf_translator.domain.ports import (
     ProjectRepositoryPort, PageRepositoryPort, ProfileRepositoryPort,
-    PromptTemplateRepositoryPort, PageConversationRepositoryPort
+    PromptTemplateRepositoryPort, PageConversationRepositoryPort,
+    ChapterSummaryRepositoryPort, ChapterPromptTemplateRepositoryPort,
+    ChapterConversationRepositoryPort
 )
 
 class SQLiteProjectRepository(ProjectRepositoryPort):
@@ -168,6 +171,94 @@ class SQLitePageConversationRepository(PageConversationRepositoryPort):
 
     def delete(self, conversation_id: str) -> bool:
         convo = self.session.get(PageConversation, conversation_id)
+        if convo:
+            self.session.delete(convo)
+            self.session.commit()
+            return True
+        return False
+
+
+class SQLiteChapterSummaryRepository(ChapterSummaryRepositoryPort):
+    def __init__(self, session: Session):
+        self.session = session
+
+    def save(self, summary: ChapterSummary) -> ChapterSummary:
+        self.session.add(summary)
+        self.session.commit()
+        self.session.refresh(summary)
+        return summary
+
+    def get_by_id(self, summary_id: str) -> Optional[ChapterSummary]:
+        return self.session.get(ChapterSummary, summary_id)
+
+    def list_by_project(self, project_id: str) -> List[ChapterSummary]:
+        statement = select(ChapterSummary).where(
+            ChapterSummary.project_id == project_id
+        ).order_by(ChapterSummary.start_page.asc(), ChapterSummary.created_at.asc())
+        return list(self.session.exec(statement).all())
+
+    def delete(self, summary_id: str) -> bool:
+        summary = self.session.get(ChapterSummary, summary_id)
+        if summary:
+            self.session.delete(summary)
+            self.session.commit()
+            return True
+        return False
+
+
+class SQLiteChapterPromptTemplateRepository(ChapterPromptTemplateRepositoryPort):
+    def __init__(self, session: Session):
+        self.session = session
+
+    def save(self, template: ChapterPromptTemplate) -> ChapterPromptTemplate:
+        self.session.add(template)
+        self.session.commit()
+        self.session.refresh(template)
+        return template
+
+    def get_by_id(self, template_id: str) -> Optional[ChapterPromptTemplate]:
+        return self.session.get(ChapterPromptTemplate, template_id)
+
+    def get_default(self) -> Optional[ChapterPromptTemplate]:
+        statement = select(ChapterPromptTemplate).where(ChapterPromptTemplate.is_default == True)
+        tpl = self.session.exec(statement).first()
+        if not tpl:
+            statement_first = select(ChapterPromptTemplate).order_by(ChapterPromptTemplate.created_at.asc())
+            tpl = self.session.exec(statement_first).first()
+        return tpl
+
+    def list_all(self) -> List[ChapterPromptTemplate]:
+        statement = select(ChapterPromptTemplate).order_by(ChapterPromptTemplate.created_at.asc())
+        return list(self.session.exec(statement).all())
+
+    def delete(self, template_id: str) -> bool:
+        tpl = self.session.get(ChapterPromptTemplate, template_id)
+        if tpl:
+            self.session.delete(tpl)
+            self.session.commit()
+            return True
+        return False
+
+
+class SQLiteChapterConversationRepository(ChapterConversationRepositoryPort):
+    def __init__(self, session: Session):
+        self.session = session
+
+    def save(self, conversation: ChapterConversation) -> ChapterConversation:
+        self.session.add(conversation)
+        self.session.commit()
+        self.session.refresh(conversation)
+        return conversation
+
+    def list_by_chapter(self, chapter_summary_id: str, section_index: Optional[int] = None) -> List[ChapterConversation]:
+        statement = select(ChapterConversation).where(ChapterConversation.chapter_summary_id == chapter_summary_id)
+        if section_index is not None:
+            statement = statement.where(ChapterConversation.section_index == section_index)
+        statement = statement.order_by(ChapterConversation.created_at.asc())
+        return list(self.session.exec(statement).all())
+
+    def delete(self, conversation_id: str) -> bool:
+        convo = self.session.get(ChapterConversation, conversation_id)
         if convo:
             self.session.delete(convo)
             self.session.commit()

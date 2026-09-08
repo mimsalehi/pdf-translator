@@ -4,7 +4,8 @@ from typing import Generator
 from pdf_translator.config import settings
 from pdf_translator.domain.entities import (
     Project, Page, TranslationProfile, TranslationAttempt, GlossaryItem,
-    PromptTemplate, PageConversation
+    PromptTemplate, PageConversation, ChapterSummary, ChapterPromptTemplate,
+    ChapterConversation
 )
 
 engine = None
@@ -32,9 +33,13 @@ def init_db():
                 source_language="English",
                 target_language="Persian",
                 model_name="gemini-1.5-pro",
+                system_prompt=DEFAULT_SYSTEM_PROMPT,
             )
             session.add(profile)
-
+        elif len(profile.system_prompt) < 500:
+            # Update legacy short prompt with full 10-principle prompt
+            profile.system_prompt = DEFAULT_SYSTEM_PROMPT
+            session.add(profile)
         # Default Prompt Templates for In-Reading AI Assistant
         existing_templates = session.exec(select(PromptTemplate)).all()
         if not existing_templates:
@@ -132,6 +137,103 @@ def init_db():
             for t in defaults:
                 session.add(t)
 
+
+        # Default Prompt Templates for Chapter Summaries & Deep Note-Taking
+        existing_chapter_templates = session.exec(select(ChapterPromptTemplate)).all()
+        if not existing_chapter_templates:
+            chapter_defaults = [
+                ChapterPromptTemplate(
+                    name="🧑‍🎓 نوت‌برداری جامع مفهومی و مهندسی (پیش‌فرض)",
+                    description="استخراج کامل صورت‌مسئله‌ها، مکانیزم‌های معماری، فرمول‌های ریاضی و جدول مصالحه‌ها (Trade-offs) بر اساس ۱۰ اصل ترجمه و ویرایش حرفه‌ای",
+                    chunk_template="""شما یک **مترجم حرفه‌ای کتاب، ویراستار زبان فارسی و معمار ارشد نرم‌افزار** هستید.
+وظیفه شما مطالعه دقیق و استخراج نوت‌های تخصصی، مفهومی و عمیق از بخش «{chapter_title}» (صفحات {start_page} تا {end_page}) است.
+
+متن ورودی این بخش از کتاب:
+\"\"\"
+{content_text}
+\"\"\"
+
+قوانین و اصول حاکم بر نوت‌برداری:
+۱. معنا، نه کلمه: اصلاً کلمه‌به‌کلمه ترجمه نکنید. مفهوم و استدلال نویسنده را بفهمید و به روان‌ترین و طبیعی‌ترین شکل در فارسی بیان کنید.
+۲. نثر ساده و روان: از عبارات متکلف مانند «موجب می‌گردد»، «امکان‌پذیر می‌سازد» یا «در راستای» پرهیز کنید و فارسی روشن بنویسید.
+۳. عدم حذف جزئیات: هیچ استدلال، مثال، مکانیزم، چالش یا فرمولی را حذف نکنید؛ از کلی‌گویی و خلاصه سطحی پرهیز کنید.
+۴. اصطلاحات تخصصی مهندسی: همواره عنوان انگلیسی اصطلاحات تخصصی را در پرانتز قید کنید (مانند: مقیاس‌پذیری (Scalability)، تکثیر داده‌ها (Replication)).
+۵. فرمول‌ها و ریاضیات: فرمول‌های ریاضی، علمی و محاسباتی را حتماً در قالب استاندارد LaTeX بین $...$ (درون‌خطی) یا $$...$$ (بلوکی) بنویسید.
+۶. عناصر فنی: نام متغیرها، توابع و اصطلاحات کدنویسی باید دست‌نخورده به انگلیسی باقی بمانند.
+۷. بازبینی نهایی: متن نوت را مانند یک ویراستار بازخوانی کنید تا جملات طولانی و انگلیسی‌زده نشوند.
+
+خروجی باید شامل استخراج کامل صورت‌مسئله‌ها، مفاهیم معماری، نحوه عملکرد مکانیزم‌ها، چرایی تصمیمات فنی و نکات طلایی باشد.""",
+                    synthesis_template="""شما یک **مترجم ارشد، ویراستار زبردست فارسی و استاد مهندسی نرم‌افزار** هستید.
+در ادامه، مجموعه نوت‌های استخراج‌شده از بخش‌های مختلف فصل «{chapter_title}» (صفحات {start_page} تا {end_page}) قرار دارد.
+وظیفه شما سنتز، یکپارچه‌سازی و تدوین یک «سند نوت‌برداری و خلاصه مرجع، عمیق و ماندگار» برای این فصل است به طوری که خواننده حتی پس از ماه‌ها، با یک بار خواندن تمام مباحث اساسی این فصل را کامل به یاد آورد.
+
+مجموعه نوت‌های بخش‌های مختلف این فصل:
+\"\"\"
+{all_chunk_notes}
+\"\"\"
+
+قوانین نگارش و ترجمه:
+- متن نهایی باید کاملاً طبیعی، روان، خوش‌خوان و فارسی اصیل باشد؛ خواننده نباید حس کند در حال خواندن ترجمه است.
+- اصطلاحات تخصصی مهندسی نرم‌افزار باید همراه با معادل انگلیسی در پرانتز باشند.
+- فرمول‌ها حتماً در قالب استاندارد LaTeX ($...$ یا $$...$$) نوشته شوند.
+- از عبارات سنگین و زاید («موجب می‌گردد»، «امکان‌پذیر می‌سازد») پرهیز کنید.
+
+ساختار الزامی سند خلاصه فصل:
+# 🎯 ۱. صورت‌مسئله اصلی و رسالت فصل (Core Problem & Thesis)
+تبیین چالش بنیادینی که این فصل به حل آن می‌پردازد و چرایی اهمیت آن در سیستم‌ها.
+
+## 🧠 ۲. نقشه مفهومی و واژگان کلیدی (Mental Model & Terminology)
+تعریف دقیق اصطلاحات و مدل‌های ذهنی معرفی‌شده همراه با اصطلاح انگلیسی در پرانتز.
+
+## 🔍 ۳. تحلیل موشکافانه بخش‌های فصل (Deep Technical Breakdown)
+تحلیل عمیق و ساختاریافته ایده‌ها، الگوریتم‌ها، مکانیزم‌های عملکردی و فرمول‌های محاسباتی.
+
+## ⚖️ ۴. جدول مقایسه، مصالحه‌ها و تصمیم‌گیری‌های فنی (Trade-offs Table)
+جدول مارک‌داون مقایسه رویکردها، مزایا، معایب و شرایط انتخاب هرکدام.
+
+## ⚡ ۵. چک‌لیست مرور سریع و نکات طلایی (Quick Recall Takeaways)
+۱۰ الی ۱۵ بند کلیدی و فشرده برای مرور سریع فصل در کمتر از ۲ دقیقه.""",
+                    is_default=True
+                ),
+                ChapterPromptTemplate(
+                    name="⚡ خلاصه سریع و نکات کلیدی فصل",
+                    description="مرور فشرده و متمرکز بر بولت‌پوینت‌های طلایی و تصمیم‌گیری‌های فنی در زمان کوتاه",
+                    chunk_template="""شما یک متخصص خلاصه‌سازی سریع متون فنی هستید. متن زیر از فصل «{chapter_title}» (صفحات {start_page} تا {end_page}) را بررسی کنید و نکات کلیدی آن را بدون حاشیه استخراج نمایید.
+
+متن بخش:
+\"\"\"
+{content_text}
+\"\"\"
+
+دستورالعمل:
+- نکات کلیدی، تعاریف و چالش‌ها را به صورت بولت‌پوینت‌های کوتاه، مستقیم و دقیق به فارسی استخراج کنید.
+- فرمول‌های موجود را در قالب LaTeX درج کنید.""",
+                    synthesis_template="""مجموعه یادداشت‌های بخش‌های فصل «{chapter_title}» (صفحات {start_page} تا {end_page}) در زیر آمده است:
+\"\"\"
+{all_chunk_notes}
+\"\"\"
+
+یک خلاصه فشرده، ساختاریافته و سریع به زبان فارسی در قالب زیر ارائه دهید:
+# ⚡ خلاصه سریع و نکات طلایی فصل: {chapter_title}
+## ۱. خلاصه در یک پاراگراف (Elevator Pitch)
+## ۲. مهم‌ترین درس‌ها و آموزه‌های فصل (Key Lessons)
+## ۳. اصطلاحات و تعاریف محوری
+## ۴. چک‌لیست اقدامات و توصیه‌های عملی""",
+                    is_default=False
+                ),
+            ]
+            for ct in chapter_defaults:
+                session.add(ct)
+
+        # Mark any interrupted/stalled chapter summaries as FAILED on startup so they do not stay stuck at 0%
+        stalled_summaries = session.exec(
+            select(ChapterSummary).where(ChapterSummary.status.in_(["PENDING", "PROCESSING"]))
+        ).all()
+        for s in stalled_summaries:
+            s.status = "FAILED"
+            s.progress_message = "پردازش با ری‌استارت سرور متوقف شد."
+            s.error_message = "پردازش با ری‌استارت سرور متوقف شد. لطفاً دکمه تلاش مجدد را بزنید."
+            session.add(s)
         session.commit()
 
 def get_session() -> Generator[Session, None, None]:

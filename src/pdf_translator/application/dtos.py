@@ -120,3 +120,88 @@ class PageAskDTO(BaseModel):
     selected_text: Optional[str] = None
     prompt_template_id: Optional[str] = None
 
+
+class ChapterSummaryDTO(BaseModel):
+    id: str
+    project_id: str
+    chapter_title: str
+    start_page: int
+    end_page: int
+    source_type: str
+    prompt_template_id: Optional[str] = None
+    chunk_notes_json: Optional[str] = None
+    final_summary: Optional[str] = None
+    status: str
+    progress_percent: int
+    progress_message: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChapterSummaryCreateDTO(BaseModel):
+    chapter_title: str
+    start_page: int
+    end_page: int
+    source_type: str = "source"  # "source" or "translation"
+    prompt_template_id: Optional[str] = None
+
+
+class ChapterSummaryUpdateDTO(BaseModel):
+    chapter_title: Optional[str] = None
+    final_summary: Optional[str] = None
+
+
+class ChapterPromptTemplateDTO(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    chunk_template: str
+    synthesis_template: str
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChapterPromptTemplateCreateDTO(BaseModel):
+    name: str
+    description: Optional[str] = None
+    chunk_template: str
+    synthesis_template: str
+    is_default: bool = False
+
+
+class ChapterPromptTemplateUpdateDTO(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    chunk_template: Optional[str] = None
+    synthesis_template: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class DetectedChapterDTO(BaseModel):
+    title: str
+    start_page: int
+    end_page: int
+    page_count: int
+    level: int = 1
+    is_main_chapter: bool = True
+
+
+
+class ChapterConversationDTO(BaseModel):
+    id: str
+    chapter_summary_id: str
+    section_index: Optional[int] = None
+    selected_text: Optional[str] = None
+    question: str
+    answer: str
+    prompt_template_id: Optional[str] = None
+    created_at: datetime
+
+
+class ChapterAskDTO(BaseModel):
+    question: str
+    section_index: Optional[int] = None  # None / 0 = Master Summary, 1..N = Section
+    selected_text: Optional[str] = None
+    prompt_template_id: Optional[str] = None
