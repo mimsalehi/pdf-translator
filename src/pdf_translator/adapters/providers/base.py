@@ -11,6 +11,13 @@ def build_translation_prompt(
     context_notes: Optional[str] = None,
 ) -> str:
     """Builds a structured prompt adhering to ADR translation principles."""
+    clean_sys_prompt = (system_prompt or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    clean_source = (source_text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+
+    # If system_prompt is empty, source_text is already a complete standalone prompt; return it directly
+    if not clean_sys_prompt:
+        return clean_source
+
     glossary_section = ""
     if glossary and len(glossary) > 0:
         glossary_lines = []
@@ -23,9 +30,10 @@ def build_translation_prompt(
 
     context_section = ""
     if context_notes:
-        context_section = f"\n\n### بافت و زمینه صفحات قبلی:\n{context_notes}"
+        clean_context = context_notes.replace("\r\n", "\n").replace("\r", "\n").strip()
+        context_section = f"\n\n### بافت و زمینه صفحات قبلی:\n{clean_context}"
 
-    prompt = f"""{system_prompt}
+    prompt = f"""{clean_sys_prompt}
 
 زبان مبدأ: {source_language}
 زبان مقصد: {target_language}
@@ -34,9 +42,9 @@ def build_translation_prompt(
 
 متن ورودی جهت ترجمه:
 <source_document>
-{source_text}
+{clean_source}
 </source_document>
 
 ترجمه نهایی (فقط متن ترجمه شده را با همان ساختار دقیق مارک‌داون، حفظ کامل تگ‌های تصاویر و حفظ ۱۰۰٪ دست‌نخورده کدهای درون ``` خروجی دهید. بدون هیچ‌گونه مقدمه، نتیجه‌گیری یا توضیحات اضافی):
 """
-    return prompt
+    return prompt.replace("\r\n", "\n").replace("\r", "\n")

@@ -75,10 +75,14 @@ def convert_chat_html_to_markdown(html_content: str) -> str:
     from markdownify import markdownify as md
 
     soup = BeautifulSoup(html_content, "html.parser")
-    
+
+    # Strip buttons, forms, svgs, edit controls, and suggestion chips
+    for el in soup.find_all(["button", "form", "svg"]):
+        el.decompose()
+    for tag in soup.find_all(attrs={"class": re.compile(r'(?:suggestion|action|toolbar|feedback|chip|button)', re.I)}):
+        tag.decompose()
+
     code_blocks = []
-    
-    # 1. Find all pre blocks, extract pristine code text and replace with token
     for idx, pre in enumerate(soup.find_all("pre")):
         code_tag = pre.find("code")
         lang = ""
@@ -135,9 +139,104 @@ class BrowserManager:
         self.cdp_url = "http://127.0.0.1:9222"
         self._playwright: Optional[Playwright] = None
         self._browser: Optional[Browser] = None
-        self._lock = asyncio.Lock()
+        self._session_locks: Dict[str, asyncio.Lock] = {}
+        self._global_connect_lock = asyncio.Lock()
         self._reset_thread_flags: Dict[str, bool] = {}
 
+    def _get_lock(self, session_tag: str = "default") -> asyncio.Lock:
+        if session_tag not in self._session_locks:
+            self._session_locks[session_tag] = asyncio.Lock()
+        return self._session_locks[session_tag]
+
+    async def _safe_insert_multiline_prompt(self, page: PlaywrightPage, prompt: str):
+        """
+        Inserts multiline prompt safely into ProseMirror/chat editors without triggering premature Enter submits.
+        Uses native document.execCommand('insertText') and CDP Input.insertText for fast, atomic insertion
+        without looping or simulating Enter keydowns.
+        """
+        clean_text = (prompt or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not clean_text:
+            return
+
+        # Grant clipboard permissions on context if available
+        try:
+            await page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+        except Exception:
+            pass
+        # 1. Ensure real Playwright click to give the editor native OS/CDP focus
+        editor_loc = page.locator('#prompt-textarea, rich-textarea div[contenteditable="true"], div.ql-editor, div.ProseMirror, div[contenteditable="true"], textarea').first
+        try:
+            if await editor_loc.is_visible(timeout=3000):
+                await editor_loc.click(force=True, timeout=3000)
+                await asyncio.sleep(0.15)
+        except Exception:
+            pass
+
+        # Also ensure inner paragraph/container is focused via JS
+        await page.evaluate("""() => {
+            const el = document.querySelector('#prompt-textarea p') 
+                    || document.querySelector('#prompt-textarea')
+                    || document.querySelector('rich-textarea div[contenteditable="true"]')
+                    || document.querySelector('div.ql-editor')
+                    || document.querySelector('div.ProseMirror')
+                    || document.querySelector('div[contenteditable="true"]')
+                    || document.querySelector('textarea')
+                    || document.activeElement;
+            if (el) {
+                el.focus();
+            }
+        }""")
+        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.15)
+
+        # 2. Primary Method: document.execCommand('insertText')
+        # Native browser editing command for contenteditable/textarea that preserves formatting,
+        # emits input/beforeinput events for ProseMirror/Quill, and NEVER triggers Enter submits.
+        inserted = False
+        try:
+            inserted = await page.evaluate("""(text) => {
+                const el = document.querySelector('#prompt-textarea p') 
+                        || document.querySelector('#prompt-textarea')
+                        || document.querySelector('rich-textarea div[contenteditable="true"]')
+                        || document.querySelector('div.ql-editor')
+                        || document.querySelector('div.ProseMirror')
+                        || document.querySelector('div[contenteditable="true"]')
+                        || document.querySelector('textarea')
+                        || document.activeElement;
+                if (!el) return false;
+                el.focus();
+                const ok = document.execCommand('insertText', false, text);
+                const curLen = (el.innerText || el.value || '').trim().length;
+                return ok && curLen >= Math.min(text.length * 0.8, 30);
+            }""", clean_text)
+        except Exception:
+            inserted = False
+
+        # 3. Secondary Method: Native Clipboard Paste (Control+V / Meta+V)
+        if not inserted:
+            try:
+                await page.evaluate("text => navigator.clipboard.writeText(text)", clean_text)
+                import sys
+                modifier = "Meta+V" if sys.platform == "darwin" else "Control+V"
+                await page.keyboard.press(modifier)
+                await asyncio.sleep(0.4)
+
+                cur_len = await page.evaluate("""() => {
+                    const el = document.querySelector('#prompt-textarea') 
+                            || document.querySelector('div[contenteditable="true"]')
+                            || document.querySelector('textarea')
+                            || document.activeElement;
+                    return el ? (el.innerText || el.value || '').trim().length : 0;
+                }""")
+                if cur_len >= Math.min(len(clean_text) * 0.8, 30):
+                    inserted = True
+            except Exception:
+                pass
+
+        # 4. Fallback Method: CDP Input.insertText directly (atomic multiline insertion, no key looping)
+        if not inserted:
+            await page.keyboard.insert_text(clean_text)
+            await asyncio.sleep(0.4)
     @classmethod
     def get_instance(cls) -> "BrowserManager":
         if cls._instance is None:
@@ -226,48 +325,69 @@ class BrowserManager:
             hint = "launch_chrome_ai.bat" if sys.platform == "win32" else "./launch_chrome_ai.sh"
             raise RuntimeError(f"Could not connect to Google Chrome on port 9222. Please start Chrome with {hint}")
 
-    async def get_or_create_page(self, domain_keyword: str, default_url: str, force_new_chat: bool = False) -> PlaywrightPage:
-        """Connects over CDP and retrieves the active tab without stealing focus with auto-reconnect."""
-        async with self._lock:
-            should_new_chat = force_new_chat or self._reset_thread_flags.pop(domain_keyword, False) or self._reset_thread_flags.pop("all", False)
+    async def get_or_create_page(
+        self,
+        domain_keyword: str,
+        default_url: str,
+        force_new_chat: bool = False,
+        session_tag: str = "default"
+    ) -> PlaywrightPage:
+        """Connects over CDP and retrieves or creates a tab dedicated to this session_tag."""
+        async with self._global_connect_lock:
+            await self._ensure_cdp_connected(default_url)
 
-            for attempt in range(2):
-                try:
-                    await self._ensure_cdp_connected(default_url)
-                    context = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
+        flag_key = f"{domain_keyword}:{session_tag}"
+        should_new_chat = force_new_chat or self._reset_thread_flags.pop(flag_key, False) or self._reset_thread_flags.pop(domain_keyword, False) or self._reset_thread_flags.pop("all", False)
 
-                    # 1. Search for existing tab on this domain
+        for attempt in range(2):
+            try:
+                context = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
+
+                # 1. Search for existing tab dedicated to this session_tag
+                target_page = None
+                for p in context.pages:
+                    if domain_keyword in p.url and getattr(p, "_pdf_session_tag", "default") == session_tag:
+                        target_page = p
+                        break
+
+                # 2. If no tab found for this session_tag
+                # 2. If no tab found with exact session_tag, check if any open tab for this provider exists
+                if target_page is None:
                     matching_pages = [p for p in context.pages if domain_keyword in p.url]
                     if matching_pages:
+                        # Adopt existing open tab for this provider!
                         target_page = matching_pages[0]
-                        if should_new_chat:
-                            # Navigate or click new chat button
-                            try:
-                                new_chat_btn = target_page.locator('a[href="/"], button[aria-label="New chat"], button[data-testid="create-new-chat-button"], button[aria-label="New Chat"]').first
-                                if await new_chat_btn.is_visible(timeout=1000):
-                                    await new_chat_btn.click()
-                                    await asyncio.sleep(0.8)
-                                else:
-                                    await target_page.goto(default_url, wait_until="domcontentloaded", timeout=15000)
-                            except Exception:
-                                await target_page.goto(default_url, wait_until="domcontentloaded", timeout=15000)
-                            await asyncio.sleep(0.5)
-                        return target_page
-
-                    # 2. If no tab found, open a new tab
-                    page = await context.new_page()
-                    await page.goto(default_url, wait_until="domcontentloaded", timeout=20000)
-                    await asyncio.sleep(0.5)
-                    return page
-
-                except Exception as e:
-                    if attempt == 0:
-                        # Transport broke or browser restarted; cleanly reset and retry once
-                        await self._clean_disconnect()
-                        await asyncio.sleep(1.0)
+                        setattr(target_page, "_pdf_session_tag", session_tag)
                     else:
-                        raise e
+                        # Only open a new tab if no tab for this provider is open at all!
+                        target_page = await context.new_page()
+                        setattr(target_page, "_pdf_session_tag", session_tag)
+                        await target_page.goto(default_url, wait_until="domcontentloaded", timeout=20000)
+                        should_new_chat = True
 
+                # 3. Handle fresh new chat thread in this tab
+                if should_new_chat:
+                    try:
+                        new_chat_btn = target_page.locator('a[href="/"], button[aria-label="New chat"], button[data-testid="create-new-chat-button"], button[aria-label="New Chat"]').first
+                        if await new_chat_btn.is_visible(timeout=1200):
+                            await new_chat_btn.click()
+                            await asyncio.sleep(0.8)
+                        else:
+                            await target_page.goto(default_url, wait_until="domcontentloaded", timeout=15000)
+                    except Exception:
+                        await target_page.goto(default_url, wait_until="domcontentloaded", timeout=15000)
+                    await asyncio.sleep(0.5)
+
+                return target_page
+
+            except Exception as e:
+                if attempt == 0:
+                    await self._clean_disconnect()
+                    async with self._global_connect_lock:
+                        await self._ensure_cdp_connected(default_url)
+                    await asyncio.sleep(1.0)
+                else:
+                    raise e
     async def open_browser_for_login(self, target_url: str = "https://chatgpt.com"):
         """Opens or brings the native Chrome browser to the front for manual logging in."""
         keyword = "chatgpt" if "chatgpt" in target_url else ("gemini" if "gemini" in target_url else "claude")
@@ -283,111 +403,261 @@ class BrowserManager:
         """Forces the next translation to start a fresh chat thread."""
         self._reset_thread_flags[provider_key] = True
 
-    async def translate_with_chatgpt(self, prompt: str, timeout_seconds: int = 150) -> str:
+    async def _start_fresh_chat(self, page: PlaywrightPage, default_url: str = "https://chatgpt.com"):
+        """Opens a clean new chat conversation in the current tab to avoid context bloat or stuck threads."""
+        try:
+            clicked = await page.evaluate("""() => {
+                const btn = document.querySelector('a[data-testid="create-new-chat-button"]')
+                         || document.querySelector('a[href="/"]')
+                         || document.querySelector('button[aria-label*="New chat" i]');
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
+                return false;
+            }""")
+            if clicked:
+                await asyncio.sleep(0.8)
+                return
+        except Exception:
+            pass
+        try:
+            await page.goto(default_url, wait_until="domcontentloaded", timeout=15000)
+            await asyncio.sleep(0.8)
+        except Exception:
+            pass
+    async def translate_with_chatgpt(self, prompt: str, timeout_seconds: int = 360, session_tag: str = "default") -> str:
         """Automates translation silently in the background ChatGPT tab without tab switching."""
-        page = await self.get_or_create_page("chatgpt.com", "https://chatgpt.com", force_new_chat=False)
+        async with self._get_lock(session_tag):
+            page = await self.get_or_create_page("chatgpt.com", "https://chatgpt.com", force_new_chat=False, session_tag=session_tag)
+            return await self._do_chatgpt_translation(page, prompt, timeout_seconds)
 
-        # Locate ProseMirror editor with multi-selector fallback
-        editor_selectors = [
-            "div#prompt-textarea",
-            "div[contenteditable='true']",
-            "textarea#prompt-textarea",
-            "div.ProseMirror",
-            "textarea[placeholder*='Ask']",
-            "textarea[placeholder*='Message']",
-            "#prompt-textarea"
+    async def _do_chatgpt_translation(self, page: PlaywrightPage, prompt: str, timeout_seconds: int = 360) -> str:
+        # Dismiss any ChatGPT popups/overlays if present (e.g. "Stay logged out", "What's new")
+        try:
+            await page.evaluate("""() => {
+                const dismissBtns = document.querySelectorAll(
+                    'button[aria-label="Close"], [data-testid="close-button"], button[aria-label="Dismiss"]'
+                );
+                for (const b of dismissBtns) {
+                    try { b.click(); } catch(e) {}
+                }
+            }""")
+        except Exception:
+            pass
+
+        # Check if previous message in chat is an unfulfilled user message (thread stuck or broken)
+        try:
+            is_stuck = await page.evaluate("""() => {
+                const msgs = document.querySelectorAll('[data-message-author-role]');
+                if (msgs.length > 0) {
+                    const last = msgs[msgs.length - 1];
+                    if (last.getAttribute('data-message-author-role') === 'user') {
+                        return true;
+                    }
+                }
+                return false;
+            }""")
+            if is_stuck:
+                await self._start_fresh_chat(page, "https://chatgpt.com")
+        except Exception:
+            pass
+
+        # Locate and click visible editor to ensure real native CDP/OS focus
+        editor_locators = [
+            page.locator("div#prompt-textarea").first,
+            page.locator("div#prompt-textarea p").first,
+            page.locator("div.ProseMirror").first,
+            page.locator("div[contenteditable='true']").first,
         ]
-        
         editor = None
-        for sel in editor_selectors:
+        for loc in editor_locators:
             try:
-                loc = page.locator(sel).first
                 if await loc.is_visible(timeout=2000):
                     editor = loc
                     break
             except Exception:
                 pass
 
-        if not editor:
-            editor = page.locator("div#prompt-textarea, div[contenteditable='true'], textarea").first
-            await editor.wait_for(state="visible", timeout=30000)
+        if editor:
+            try:
+                await editor.click(force=True, timeout=3000)
+            except Exception:
+                pass
+        else:
+            try:
+                fallback_loc = page.locator("div#prompt-textarea, div[contenteditable='true']").first
+                await fallback_loc.wait_for(state="attached", timeout=8000)
+                await fallback_loc.click(force=True, timeout=3000)
+            except Exception:
+                pass
 
-        await editor.click()
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.2)
 
-        # Focus inner paragraph via JS
-        await page.evaluate("""() => {
-            const el = document.querySelector('#prompt-textarea p') 
-                    || document.querySelector('#prompt-textarea')
-                    || document.querySelector('div[contenteditable="true"]')
-                    || document.querySelector('textarea');
-            if (el) el.focus();
-        }""")
+        # Ensure focus is placed on the inner text container via JS
+        try:
+            await page.evaluate("""() => {
+                const el = document.querySelector('#prompt-textarea p') 
+                        || document.querySelector('#prompt-textarea')
+                        || document.querySelector('div[contenteditable="true"]');
+                if (el) el.focus();
+            }""")
+        except Exception:
+            pass
+        # Clear editor first to ensure no leftover text
+        try:
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Backspace")
+            await asyncio.sleep(0.2)
+        except Exception:
+            pass
 
-        # Insert prompt
-        await page.keyboard.insert_text(prompt)
-        await asyncio.sleep(0.6)
+        # Record baseline count of ONLY assistant turns BEFORE sending
+        assistant_locator = page.locator('div[data-message-author-role="assistant"]')
+        baseline_count = await assistant_locator.count()
+        # Insert full multiline prompt safely without triggering premature Enter submit
+        await self._safe_insert_multiline_prompt(page, prompt)
 
         # Send
         send_selectors = [
+            'button#composer-submit-button',
             'button[data-testid="send-button"]',
             'button[data-testid="composer-send-button"]',
             'button[data-testid="fruitjuice-send-button"]',
             'button[aria-label="Send prompt"]',
             'button[aria-label="Send message"]',
+            'button#send-button',
         ]
         sent = False
         for s_sel in send_selectors:
             try:
                 s_btn = page.locator(s_sel).first
-                if await s_btn.is_visible(timeout=800):
-                    await s_btn.click()
+                if await s_btn.is_visible(timeout=1000):
+                    await s_btn.click(timeout=2000)
                     sent = True
                     break
             except Exception:
                 pass
 
         if not sent:
+            # Fallback: JS click on composer submit button
+            try:
+                sent = await page.evaluate("""() => {
+                    const btn = document.querySelector('#composer-submit-button')
+                             || document.querySelector('button[data-testid="send-button"]')
+                             || document.querySelector('button[aria-label*="Send"]');
+                    if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                }""")
+            except Exception:
+                sent = False
+
+        if not sent:
             await page.keyboard.press("Enter")
 
-        # Wait for response in background
-        await asyncio.sleep(3.0)
-        stop_btn = page.locator('button[data-testid="stop-button"], button[aria-label="Stop streaming"], button[aria-label="Stop generating"]').first
-        for _ in range(int(timeout_seconds * 2)):
-            try:
-                if not await stop_btn.is_visible():
-                    await asyncio.sleep(1.0)
-                    if not await stop_btn.is_visible():
-                        break
-            except Exception:
+        # Verify prompt was dispatched; if editor still has content, click send again
+        for _ in range(8):
+            await asyncio.sleep(0.4)
+            editor_has_text = await page.evaluate("""() => {
+                const el = document.querySelector('#prompt-textarea') || document.querySelector('div[contenteditable="true"]');
+                return el ? (el.innerText || '').trim().length > 10 : false;
+            }""")
+            if not editor_has_text:
                 break
+            try:
+                s_btn = page.locator('button#composer-submit-button, button[data-testid="send-button"]').first
+                if await s_btn.is_visible(timeout=500):
+                    await s_btn.click(timeout=1000)
+                else:
+                    await page.keyboard.press("Enter")
+            except Exception:
+                await page.keyboard.press("Enter")
+
+        # 1. Wait for a NEW assistant response to begin generating (must exceed baseline count or show stop button)
+        start_time = asyncio.get_event_loop().time()
+        stop_btn = page.locator('button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="توقف"]').first
+        while (asyncio.get_event_loop().time() - start_time) < 30.0:
+            current_count = await assistant_locator.count()
+            if current_count > baseline_count:
+                break
+            try:
+                if await stop_btn.is_visible():
+                    break
+            except Exception:
+                pass
             await asyncio.sleep(0.5)
 
-        await asyncio.sleep(1.5)
+        # 2. Wait for streaming to finish (stop button disappears and text length stabilizes)
+        prev_len = 0
+        stable_count = 0
+        while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
+            is_stopping = False
+            try:
+                is_stopping = await stop_btn.is_visible()
+            except Exception:
+                is_stopping = False
 
-        # Extract latest assistant message preserving Markdown structure (headings, lists, code)
-        msgs = page.locator('div[data-message-author-role="assistant"]')
-        count = await msgs.count()
-        if count == 0:
-            articles = page.locator('article')
-            art_count = await articles.count()
-            if art_count > 0:
-                html = await articles.nth(art_count - 1).inner_html()
-                return convert_chat_html_to_markdown(html)
-            raise RuntimeError("No response found from ChatGPT. Please verify you are logged into ChatGPT.")
+            current_count = await assistant_locator.count()
+            # Must wait until the new assistant turn is actually present
+            if baseline_count > 0 and current_count <= baseline_count:
+                await asyncio.sleep(0.8)
+                continue
 
-        latest_msg = msgs.nth(count - 1)
-        html = await latest_msg.inner_html()
+            latest_turn = assistant_locator.nth(current_count - 1) if current_count > 0 else None
+
+            cur_text = ""
+            if latest_turn:
+                try:
+                    md_box = latest_turn.locator('.markdown, div.prose, div[class*="markdown"]').first
+                    if await md_box.is_visible(timeout=500):
+                        cur_text = await md_box.inner_text()
+                    else:
+                        cur_text = await latest_turn.inner_text()
+                except Exception:
+                    cur_text = ""
+
+            if cur_text and len(cur_text) > 5:
+                if len(cur_text) == prev_len:
+                    stable_count += 1
+                else:
+                    prev_len = len(cur_text)
+                    stable_count = 0
+
+            # Completion condition: must be past baseline, stop button gone, text stable for >= 3 checks
+            if (current_count > baseline_count or baseline_count == 0) and not is_stopping and stable_count >= 3 and len(cur_text) > 0:
+                break
+            await asyncio.sleep(0.8)
+
+        await asyncio.sleep(1.0)
+
+        # 3. Extract STRICTLY from .markdown or div.prose inside the latest assistant turn
+        current_count = await assistant_locator.count()
+        if current_count == 0 or (baseline_count > 0 and current_count <= baseline_count):
+            raise RuntimeError("پاسخ جدیدی از هوش مصنوعی دریافت نشد. لطفاً تب کروم را بررسی نمایید.")
+
+        latest_turn = assistant_locator.nth(current_count - 1)
+        try:
+            md_box = latest_turn.locator('.markdown, div.prose, div[class*="markdown"]').first
+            if await md_box.is_visible(timeout=1000):
+                html = await md_box.inner_html()
+            else:
+                html = await latest_turn.inner_html()
+        except Exception:
+            html = await latest_turn.inner_html()
         return convert_chat_html_to_markdown(html)
 
-    async def translate_with_gemini(self, prompt: str, timeout_seconds: int = 150) -> str:
+    async def translate_with_gemini(self, prompt: str, timeout_seconds: int = 360, session_tag: str = "default") -> str:
         """Automates translation silently in the background Google Gemini tab."""
-        page = await self.get_or_create_page("gemini.google.com", "https://gemini.google.com/app", force_new_chat=False)
+        async with self._get_lock(session_tag):
+            page = await self.get_or_create_page("gemini.google.com", "https://gemini.google.com/app", force_new_chat=False, session_tag=session_tag)
+            return await self._do_gemini_translation(page, prompt, timeout_seconds)
 
-        # Record baseline model responses count before submitting the prompt
+    async def _do_gemini_translation(self, page: PlaywrightPage, prompt: str, timeout_seconds: int = 360) -> str:
         turns_locator = page.locator("model-response, [class*='model-response'], div.model-response")
         baseline_turns_count = await turns_locator.count()
-
         input_box = page.locator(
             "rich-textarea div[contenteditable='true'], textarea, div.ql-editor, [contenteditable='true'][role='textbox']"
         ).first
@@ -400,8 +670,7 @@ class BrowserManager:
         await page.keyboard.press("Backspace")
         await asyncio.sleep(0.2)
 
-        await page.keyboard.insert_text(prompt)
-        await asyncio.sleep(0.5)
+        await self._safe_insert_multiline_prompt(page, prompt)
 
         send_btn = page.locator(
             "button[aria-label='Send message'], button[aria-label*='Send' i], button.send-button, button[aria-label='Submit'], button[aria-label*='ارسال' i]"
@@ -536,7 +805,6 @@ class BrowserManager:
             # Priority 4: full latest turn inner_html
             if not extracted_html.strip():
                 extracted_html = await latest_turn.inner_html()
-
         # Global fallback if turns_locator didn't match anything
         if not extracted_html.strip():
             fallback_res = page.locator(".markdown-main-panel, message-content, .model-response-text")
@@ -547,16 +815,25 @@ class BrowserManager:
 
         return convert_chat_html_to_markdown(extracted_html)
 
-    async def translate_with_claude(self, prompt: str, timeout_seconds: int = 150) -> str:
+    async def translate_with_claude(self, prompt: str, timeout_seconds: int = 360, session_tag: str = "default") -> str:
         """Automates translation silently in the background Claude tab."""
-        page = await self.get_or_create_page("claude.ai", "https://claude.ai/new", force_new_chat=False)
+        async with self._get_lock(session_tag):
+            page = await self.get_or_create_page("claude.ai", "https://claude.ai/new", force_new_chat=False, session_tag=session_tag)
+            return await self._do_claude_translation(page, prompt, timeout_seconds)
 
+    async def _do_claude_translation(self, page: PlaywrightPage, prompt: str, timeout_seconds: int = 360) -> str:
         input_box = page.locator("div[contenteditable='true'], textarea, div.ProseMirror").first
         await input_box.wait_for(state="visible", timeout=30000)
-        await input_box.click()
         await asyncio.sleep(0.3)
 
-        await page.keyboard.insert_text(prompt)
+        # Clear editor first to ensure no leftover text
+        try:
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Backspace")
+            await asyncio.sleep(0.2)
+        except Exception:
+            pass
+        await self._safe_insert_multiline_prompt(page, prompt)
         await asyncio.sleep(0.6)
 
         send_btn = page.locator("button[aria-label='Send Message'], button[aria-label='Send message']").first

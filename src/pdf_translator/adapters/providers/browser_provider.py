@@ -8,10 +8,10 @@ from pdf_translator.adapters.providers.base import build_translation_prompt
 from pdf_translator.adapters.providers.browser_manager import BrowserManager
 
 class BrowserTranslationProvider(TranslationProviderPort):
-    def __init__(self, provider_type: ProviderType):
+    def __init__(self, provider_type: ProviderType, session_tag: str = "default"):
         self.provider_type = provider_type
+        self.session_tag = session_tag
         self.manager = BrowserManager.get_instance()
-
     async def translate(
         self,
         source_text: str,
@@ -32,12 +32,12 @@ class BrowserTranslationProvider(TranslationProviderPort):
 
         try:
             if self.provider_type == ProviderType.BROWSER_CHATGPT:
-                return await self.manager.translate_with_chatgpt(prompt)
+                return await self.manager.translate_with_chatgpt(prompt, session_tag=self.session_tag)
             elif self.provider_type == ProviderType.BROWSER_GEMINI:
-                return await self.manager.translate_with_gemini(prompt)
+                return await self.manager.translate_with_gemini(prompt, session_tag=self.session_tag)
             elif self.provider_type == ProviderType.BROWSER_CLAUDE:
-                return await self.manager.translate_with_claude(prompt)
+                return await self.manager.translate_with_claude(prompt, session_tag=self.session_tag)
             else:
-                return await self.manager.translate_with_chatgpt(prompt)
+                return await self.manager.translate_with_chatgpt(prompt, session_tag=self.session_tag)
         except Exception as e:
             raise TranslationProviderError(f"Browser ({self.provider_type.value})", str(e))
