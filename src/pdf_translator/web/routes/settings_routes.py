@@ -46,7 +46,7 @@ async def update_settings(
     profile.model_name = model_name.strip()
     if api_key.strip():
         profile.api_key = api_key.strip()
-    profile.system_prompt = system_prompt.strip()
+    profile.system_prompt = system_prompt.replace("\r\n", "\n").replace("\r", "\n").strip()
     profile.temperature = temperature
     profile.updated_at = datetime.utcnow()
     

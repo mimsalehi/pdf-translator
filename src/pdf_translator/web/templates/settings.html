@@ -113,6 +113,92 @@
   </div>
 </div>
 
+<!-- Chapter Note Templates Management Card -->
+<div class="card" style="max-width: 800px; margin-top: 2rem;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+    <div>
+      <h2 style="font-size: 1.15rem; margin-bottom: 0.25rem; display: flex; align-items: center; gap: 0.5rem;">
+        <span>📚</span> قالب‌های نوت‌برداری و خلاصه فصول (Chapter Note Templates)
+      </h2>
+      <p style="font-size: 0.85rem; color: var(--color-text-muted); margin: 0;">
+        تنظیم پرامپت‌های استخراج چانک‌ها و پرامپت سنتز نهایی برای تدوین خلاصه‌های عمیق فصول کتاب
+      </p>
+    </div>
+    <button type="button" class="btn btn-primary btn-sm" onclick="openNewChapterTemplateModal()">
+      ➕ افزودن قالب نوت‌برداری
+    </button>
+  </div>
+
+  <div id="chapter-templates-list-container" style="display: flex; flex-direction: column; gap: 1rem;">
+    <div style="text-align: center; color: var(--color-text-muted); padding: 1.5rem;">در حال بارگذاری قالب‌ها...</div>
+  </div>
+</div>
+
+<!-- Add/Edit Chapter Note Template Modal -->
+<div id="chapter-template-modal" class="reader-modal-overlay" style="display: none;">
+  <div class="reader-modal-dialog" style="max-width: 750px; max-height: 90vh;">
+    <div class="reader-modal-header" style="direction: rtl;">
+      <strong id="chapter-template-modal-title" style="font-size: 1.05rem;">قالب نوت‌برداری فصل</strong>
+      <button class="btn btn-secondary btn-sm" onclick="closeChapterTemplateModal()" style="font-size: 1.1rem; line-height: 1;">✕</button>
+    </div>
+    <div class="reader-modal-content" style="direction: rtl; padding: 1.5rem;">
+      <form id="chapter-template-form" onsubmit="saveChapterTemplateForm(event)">
+        <input type="hidden" id="ch-template-id-input">
+
+        <div class="form-group">
+          <label class="form-label" for="ch-tpl-name-input">عنوان قالب</label>
+          <input type="text" id="ch-tpl-name-input" class="form-control" placeholder="مثلاً: 🧑‍🎓 نوت‌برداری جامع مفهومی و مهندسی" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="ch-tpl-desc-input">توضیح کاربرد قالب</label>
+          <input type="text" id="ch-tpl-desc-input" class="form-control" placeholder="توضیح کوتاه...">
+        </div>
+
+        <!-- Step 1: Chunk Extraction Prompt -->
+        <div class="form-group" style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.35rem;">
+            <label class="form-label" style="margin: 0; font-weight: 700; color: #60a5fa;" for="ch-tpl-chunk-input">
+              ۱. پرامپت استخراج نوت از هر بخش (Chunk Template)
+            </label>
+            <div style="display: flex; gap: 0.25rem;">
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-chunk-input', '{chapter_title}')">+ {chapter_title}</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-chunk-input', '{start_page}')">+ {start_page}</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-chunk-input', '{end_page}')">+ {end_page}</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-chunk-input', '{content_text}')">+ {content_text}</button>
+            </div>
+          </div>
+          <textarea id="ch-tpl-chunk-input" rows="6" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.86rem; line-height: 1.6; background: #0b1120; color: #f1f5f9;" required></textarea>
+        </div>
+
+        <!-- Step 2: Synthesis Prompt -->
+        <div class="form-group" style="margin-top: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.35rem;">
+            <label class="form-label" style="margin: 0; font-weight: 700; color: #34d399;" for="ch-tpl-synthesis-input">
+              ۲. پرامپت سنتز و تجمیع نهایی فصل (Synthesis Template)
+            </label>
+            <div style="display: flex; gap: 0.25rem;">
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-synthesis-input', '{chapter_title}')">+ {chapter_title}</button>
+              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-synthesis-input', '{all_chunk_notes}')">+ {all_chunk_notes}</button>
+            </div>
+          </div>
+          <textarea id="ch-tpl-synthesis-input" rows="7" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.86rem; line-height: 1.6; background: #0b1120; color: #f1f5f9;" required></textarea>
+        </div>
+
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+          <input type="checkbox" id="ch-tpl-default-input" style="cursor: pointer;">
+          <label for="ch-tpl-default-input" style="font-size: 0.9rem; cursor: pointer; user-select: none; margin: 0;">تنظیم به عنوان قالب پیش‌فرض نوت‌برداری</label>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeChapterTemplateModal()">انصراف</button>
+          <button type="submit" class="btn btn-primary">ذخیره قالب</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <!-- Add/Edit Prompt Template Modal -->
 <div id="template-modal" class="reader-modal-overlay" style="display: none;">
   <div class="reader-modal-dialog" style="max-width: 650px; max-height: 90vh;">
@@ -310,5 +396,147 @@
 
   // Load templates on page load
   loadSettingsPromptTemplates();
+
+  // --- Chapter Note Templates Management ---
+  let chapterTemplatesList = [];
+
+  async function loadSettingsChapterTemplates() {
+    const container = document.getElementById('chapter-templates-list-container');
+    try {
+      const res = await fetch('/api/chapter-templates');
+      if (res.ok) {
+        chapterTemplatesList = await res.json();
+        if (chapterTemplatesList.length === 0) {
+          container.innerHTML = '<div style="text-align: center; color: var(--color-text-muted); padding: 1.5rem;">هیچ قالبی ثبت نشده است.</div>';
+          return;
+        }
+
+        container.innerHTML = chapterTemplatesList.map(t => `
+          <div style="background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1rem 1.25rem; display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; direction: rtl;">
+            <div style="flex: 1;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem;">
+                <strong style="font-size: 1rem; color: #f1f5f9;">${t.name}</strong>
+                ${t.is_default ? '<span class="badge badge-ready" style="font-size: 0.72rem;">پیش‌فرض</span>' : ''}
+              </div>
+              ${t.description ? `<p style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.5rem 0;">${t.description}</p>` : ''}
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
+                <div>
+                  <small style="color: #60a5fa; font-weight: 700; display: block; margin-bottom: 0.2rem;">۱. پرامپت استخراج چانک:</small>
+                  <div style="background: #0b1120; border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-size: 0.78rem; color: #cbd5e1; white-space: pre-wrap; max-height: 80px; overflow-y: auto;">${t.chunk_template}</div>
+                </div>
+                <div>
+                  <small style="color: #34d399; font-weight: 700; display: block; margin-bottom: 0.2rem;">۲. پرامپت سنتز نهایی:</small>
+                  <div style="background: #0b1120; border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-size: 0.78rem; color: #cbd5e1; white-space: pre-wrap; max-height: 80px; overflow-y: auto;">${t.synthesis_template}</div>
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.35rem;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="openEditChapterTemplateModal('${t.id}')">ویرایش</button>
+              <button type="button" class="btn btn-secondary btn-sm" onclick="deleteSettingsChapterTemplate('${t.id}')" style="color: var(--color-danger);">حذف</button>
+            </div>
+          </div>
+        `).join('');
+      }
+    } catch (err) {
+      container.innerHTML = '<div style="color: var(--color-danger); padding: 1rem;">خطا در بارگذاری قالب‌ها.</div>';
+    }
+  }
+
+  function openNewChapterTemplateModal() {
+    document.getElementById('ch-template-id-input').value = '';
+    document.getElementById('ch-tpl-name-input').value = '';
+    document.getElementById('ch-tpl-desc-input').value = '';
+    document.getElementById('ch-tpl-chunk-input').value = `شما یک معمار نرم‌افزار و پژوهشگر ارشد هستید. متن زیر از فصل «{chapter_title}» (صفحات {start_page} تا {end_page}) را به دقت مطالعه و نوت‌برداری عمیق و تخصصی کنید:\n\nمتن استخراج‌شده:\n"""\n{content_text}\n"""\n\nدستورالعمل:\n- صورت‌مسئله‌ها، مفاهیم معماری، الگوریتم‌ها و فرمول‌های ریاضی (LaTeX) را به طور کامل استخراج کنید.`;
+    document.getElementById('ch-tpl-synthesis-input').value = `مجموعه نوت‌های بخش‌های مختلف فصل «{chapter_title}» در زیر آمده است:\n\"\"\"\n{all_chunk_notes}\n\"\"\"\n\nلطفاً یک سند مرجع و خلاصه جامع، ساختاریافته و ماندگار برای این فصل تدوین کنید:`;
+    document.getElementById('ch-tpl-default-input').checked = false;
+    document.getElementById('chapter-template-modal-title').textContent = '➕ افزودن قالب نوت‌برداری جدید';
+    document.getElementById('chapter-template-modal').style.display = 'flex';
+  }
+
+  function openEditChapterTemplateModal(tplId) {
+    const tpl = chapterTemplatesList.find(t => t.id === tplId);
+    if (!tpl) return;
+
+    document.getElementById('ch-template-id-input').value = tpl.id;
+    document.getElementById('ch-tpl-name-input').value = tpl.name;
+    document.getElementById('ch-tpl-desc-input').value = tpl.description || '';
+    document.getElementById('ch-tpl-chunk-input').value = tpl.chunk_template;
+    document.getElementById('ch-tpl-synthesis-input').value = tpl.synthesis_template;
+    document.getElementById('ch-tpl-default-input').checked = tpl.is_default;
+    document.getElementById('chapter-template-modal-title').textContent = `✏️ ویرایش قالب: ${tpl.name}`;
+    document.getElementById('chapter-template-modal').style.display = 'flex';
+  }
+
+  function closeChapterTemplateModal() {
+    document.getElementById('chapter-template-modal').style.display = 'none';
+  }
+
+  function insertChTplVar(targetId, varName) {
+    const textarea = document.getElementById(targetId);
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    textarea.value = text.substring(0, start) + varName + text.substring(end);
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = start + varName.length;
+  }
+
+  async function saveChapterTemplateForm(e) {
+    e.preventDefault();
+    const id = document.getElementById('ch-template-id-input').value;
+    const name = document.getElementById('ch-tpl-name-input').value.trim();
+    const description = document.getElementById('ch-tpl-desc-input').value.trim();
+    const chunk_template = document.getElementById('ch-tpl-chunk-input').value.trim();
+    const synthesis_template = document.getElementById('ch-tpl-synthesis-input').value.trim();
+    const is_default = document.getElementById('ch-tpl-default-input').checked;
+
+    const payload = { name, description, chunk_template, synthesis_template, is_default };
+
+    try {
+      let res;
+      if (id) {
+        res = await fetch(`/api/chapter-templates/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        res = await fetch('/api/chapter-templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+      }
+
+      if (res.ok) {
+        closeChapterTemplateModal();
+        loadSettingsChapterTemplates();
+        if (window.showToast) showToast('قالب نوت‌برداری ذخیره شد.', 'success');
+      } else {
+        const err = await res.json();
+        if (window.showToast) showToast('خطا در ذخیره قالب: ' + (err.detail || 'مشکل در سرور'), 'error');
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطای شبکه: ' + err.message, 'error');
+    }
+  }
+
+  async function deleteSettingsChapterTemplate(tplId) {
+    if (!confirm('آیا از حذف این قالب نوت‌برداری اطمینان دارید؟')) return;
+    try {
+      const res = await fetch(`/api/chapter-templates/${tplId}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadSettingsChapterTemplates();
+        if (window.showToast) showToast('قالب با موفقیت حذف شد.', 'info');
+      } else {
+        if (window.showToast) showToast('خطا در حذف قالب.', 'error');
+      }
+    } catch (err) {
+      if (window.showToast) showToast('خطای شبکه: ' + err.message, 'error');
+    }
+  }
+
+  // Load chapter templates on page load
+  loadSettingsChapterTemplates();
 </script>
 {% endblock %}
