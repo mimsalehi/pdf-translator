@@ -832,11 +832,11 @@
       return `\n\n![تصویر ${imgIdx}](/api/projects/${projectId}/pages/${targetPage}/images/${imgIdx})\n\n`;
     });
 
-    // 2. Parse Markdown
-    let html = window.marked ? marked.parse(processed) : processed;
+    // 2. Parse Markdown with KaTeX Protection (renders $...$ and $$...$$ flawlessly)
+    let html = window.renderMarkdownWithKatex ? renderMarkdownWithKatex(processed) : (window.marked ? marked.parse(processed) : processed);
     container.innerHTML = html;
 
-    // 3. Render LaTeX Math formulas via KaTeX Auto-Render
+    // 3. Fallback KaTeX auto-render for any remaining DOM math
     if (window.renderMathInElement) {
       try {
         renderMathInElement(container, {
@@ -853,7 +853,6 @@
         console.warn('KaTeX auto-render error:', err);
       }
     }
-
     // 4. Render any ```math or ```latex code blocks into KaTeX display blocks
     if (window.katex) {
       container.querySelectorAll('pre code.language-latex, pre code.language-math, pre code.language-equation').forEach(codeBlock => {

@@ -392,3 +392,75 @@ window.getSavedReaderTheme = getSavedReaderTheme;
 window.setReaderTheme = setReaderTheme;
 window.cycleReaderTheme = cycleReaderTheme;
 window.applyReaderTheme = applyReaderTheme;
+
+// --- Universal KaTeX-Protected Markdown Renderer ---
+window.renderMarkdownWithKatex = function(text) {
+  if (!text) return '';
+
+  const mathBlocks = [];
+  const mathInlines = [];
+  let clean = text;
+
+  // 1. Pre-process block math: $$ ... $$ (preserving spaces, line breaks, and formatting)
+  clean = clean.replace(/\$\$([\s\S]*?)\$\$/g, (match, formula) => {
+    const idx = mathBlocks.length;
+    let math = formula.trim().replace(/(\d+(?:\.\d+)?)\s*%(?![a-zA-Z])/g, '$1\\%');
+    mathBlocks.push(math);
+    return `MATHBLOCKTOKEN${idx}XYZ`;
+  });
+
+  // 2. Pre-process inline math: $ ... $ (excluding escaped \$)
+  clean = clean.replace(/(^|[^\\])\$([^\$\n]+?)\$/g, (match, prefix, formula) => {
+    const idx = mathInlines.length;
+    let math = formula.trim().replace(/(\d+(?:\.\d+)?)\s*%(?![a-zA-Z])/g, '$1\\%');
+    mathInlines.push(math);
+    return `${prefix}MATHINLINETOKEN${idx}XYZ`;
+  });
+
+  // 3. Pre-process bracket math: \[ ... \] and \( ... \)
+  clean = clean.replace(/\\\[([\s\S]*?)\\\]/g, (match, formula) => {
+    const idx = mathBlocks.length;
+    let math = formula.trim().replace(/(\d+(?:\.\d+)?)\s*%(?![a-zA-Z])/g, '$1\\%');
+    mathBlocks.push(math);
+    return `MATHBLOCKTOKEN${idx}XYZ`;
+  });
+  clean = clean.replace(/\\\(([\s\S]*?)\\\)/g, (match, formula) => {
+    const idx = mathInlines.length;
+    let math = formula.trim().replace(/(\d+(?:\.\d+)?)\s*%(?![a-zA-Z])/g, '$1\\%');
+    mathInlines.push(math);
+    return `MATHINLINETOKEN${idx}XYZ`;
+  });
+
+  // 4. Parse Markdown with marked
+  let html = window.marked ? marked.parse(clean) : clean;
+
+  // 5. Restore Math Blocks directly into KaTeX render
+  html = html.replace(/MATHBLOCKTOKEN(\d+)XYZ/g, (match, idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    const math = mathBlocks[idx] || '';
+    if (window.katex) {
+      try {
+        return katex.renderToString(math, { displayMode: true, throwOnError: false });
+      } catch (e) {
+        console.warn('KaTeX block render error:', e);
+      }
+    }
+    return `$$${math}$$`;
+  });
+
+  // 6. Restore Inline Math directly into KaTeX render
+  html = html.replace(/MATHINLINETOKEN(\d+)XYZ/g, (match, idxStr) => {
+    const idx = parseInt(idxStr, 10);
+    const math = mathInlines[idx] || '';
+    if (window.katex) {
+      try {
+        return katex.renderToString(math, { displayMode: false, throwOnError: false });
+      } catch (e) {
+        console.warn('KaTeX inline render error:', e);
+      }
+    }
+    return `$${math}$`;
+  });
+
+  return html;
+};

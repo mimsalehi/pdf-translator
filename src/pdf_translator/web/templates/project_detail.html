@@ -748,7 +748,7 @@
           </button>
         </div>
         <div class="master-summary-content">
-          ${window.marked ? marked.parse(raw) : raw}
+          ${window.renderMarkdownWithKatex ? renderMarkdownWithKatex(raw) : (window.marked ? marked.parse(raw) : raw)}
         </div>
       `;
 
@@ -787,7 +787,7 @@
               </div>
             </div>
             <div class="chapter-section-body" style="display: block;">
-              ${window.marked ? marked.parse(s.note || '') : s.note || ''}
+              ${window.renderMarkdownWithKatex ? renderMarkdownWithKatex(s.note || '') : (window.marked ? marked.parse(s.note || '') : s.note || '')}
             </div>
           </div>
         `).join('');
@@ -1221,7 +1221,7 @@
 
   function renderChapterAssistantContent(rawText, container) {
     if (!rawText) { container.innerHTML = ''; return; }
-    let html = window.marked ? marked.parse(rawText) : rawText;
+    let html = window.renderMarkdownWithKatex ? renderMarkdownWithKatex(rawText) : (window.marked ? marked.parse(rawText) : rawText);
     container.innerHTML = html;
 
     if (window.renderMathInElement) {
