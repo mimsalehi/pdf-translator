@@ -150,53 +150,18 @@ class BrowserManager:
 
     async def _safe_insert_multiline_prompt(self, page: PlaywrightPage, prompt: str):
         """
-        Inserts multiline prompt safely into ProseMirror/chat editors without triggering premature Enter submits.
-        Uses native document.execCommand('insertText') and CDP Input.insertText for fast, atomic insertion
-        without looping or simulating Enter keydowns.
+        Fast and atomic multiline prompt insertion into ProseMirror/rich-text editors.
+        Inserts instantly via document.execCommand('insertText') without Enter submits.
         """
         clean_text = (prompt or "").replace("\r\n", "\n").replace("\r", "\n").strip()
         if not clean_text:
             return
 
-        # Grant clipboard permissions on context if available
-        try:
-            await page.context.grant_permissions(["clipboard-read", "clipboard-write"])
-        except Exception:
-            pass
-        # 1. Ensure real Playwright click to give the editor native OS/CDP focus
-        editor_loc = page.locator('#prompt-textarea, rich-textarea div[contenteditable="true"], div.ql-editor, div.ProseMirror, div[contenteditable="true"], textarea').first
-        try:
-            if await editor_loc.is_visible(timeout=3000):
-                await editor_loc.click(force=True, timeout=3000)
-                await asyncio.sleep(0.15)
-        except Exception:
-            pass
-
-        # Also ensure inner paragraph/container is focused via JS
-        await page.evaluate("""() => {
-            const el = document.querySelector('#prompt-textarea p') 
-                    || document.querySelector('#prompt-textarea')
-                    || document.querySelector('rich-textarea div[contenteditable="true"]')
-                    || document.querySelector('div.ql-editor')
-                    || document.querySelector('div.ProseMirror')
-                    || document.querySelector('div[contenteditable="true"]')
-                    || document.querySelector('textarea')
-                    || document.activeElement;
-            if (el) {
-                el.focus();
-            }
-        }""")
-        await asyncio.sleep(0.1)
-        await asyncio.sleep(0.15)
-
-        # 2. Primary Method: document.execCommand('insertText')
-        # Native browser editing command for contenteditable/textarea that preserves formatting,
-        # emits input/beforeinput events for ProseMirror/Quill, and NEVER triggers Enter submits.
+        # 1. Primary Method: Fast atomic document.execCommand('insertText') on contenteditable DIV/textarea
         inserted = False
         try:
             inserted = await page.evaluate("""(text) => {
-                const el = document.querySelector('#prompt-textarea p') 
-                        || document.querySelector('#prompt-textarea')
+                const el = document.querySelector('#prompt-textarea')
                         || document.querySelector('rich-textarea div[contenteditable="true"]')
                         || document.querySelector('div.ql-editor')
                         || document.querySelector('div.ProseMirror')
@@ -212,31 +177,29 @@ class BrowserManager:
         except Exception:
             inserted = False
 
-        # 3. Secondary Method: Native Clipboard Paste (Control+V / Meta+V)
-        if not inserted:
-            try:
-                await page.evaluate("text => navigator.clipboard.writeText(text)", clean_text)
-                import sys
-                modifier = "Meta+V" if sys.platform == "darwin" else "Control+V"
-                await page.keyboard.press(modifier)
-                await asyncio.sleep(0.4)
+        if inserted:
+            return
 
-                cur_len = await page.evaluate("""() => {
-                    const el = document.querySelector('#prompt-textarea') 
-                            || document.querySelector('div[contenteditable="true"]')
-                            || document.querySelector('textarea')
-                            || document.activeElement;
-                    return el ? (el.innerText || el.value || '').trim().length : 0;
-                }""")
-                if cur_len >= Math.min(len(clean_text) * 0.8, 30):
-                    inserted = True
-            except Exception:
-                pass
+        # 2. If initial execCommand did not insert, ensure editor click and retry
+        editor_loc = page.locator('#prompt-textarea, rich-textarea div[contenteditable="true"], div.ql-editor, div.ProseMirror, div[contenteditable="true"], textarea').first
+        try:
+            if await editor_loc.is_visible(timeout=800):
+                await editor_loc.click(force=True, timeout=1200)
+        except Exception:
+            pass
 
-        # 4. Fallback Method: CDP Input.insertText directly (atomic multiline insertion, no key looping)
+        try:
+            inserted = await page.evaluate("""(text) => {
+                const el = document.activeElement || document.querySelector('#prompt-textarea');
+                if (!el) return false;
+                return document.execCommand('insertText', false, text);
+            }""", clean_text)
+        except Exception:
+            inserted = False
+
+        # 3. Fallback: direct atomic text insertion via CDP
         if not inserted:
             await page.keyboard.insert_text(clean_text)
-            await asyncio.sleep(0.4)
     @classmethod
     def get_instance(cls) -> "BrowserManager":
         if cls._instance is None:
@@ -377,9 +340,11 @@ class BrowserManager:
                     except Exception:
                         await target_page.goto(default_url, wait_until="domcontentloaded", timeout=15000)
                     await asyncio.sleep(0.5)
-
+                try:
+                    await target_page.context.grant_permissions(["clipboard-read", "clipboard-write"])
+                except Exception:
+                    pass
                 return target_page
-
             except Exception as e:
                 if attempt == 0:
                     await self._clean_disconnect()
@@ -464,136 +429,52 @@ class BrowserManager:
             pass
 
         # Locate and click visible editor to ensure real native CDP/OS focus
-        editor_locators = [
-            page.locator("div#prompt-textarea").first,
-            page.locator("div#prompt-textarea p").first,
-            page.locator("div.ProseMirror").first,
-            page.locator("div[contenteditable='true']").first,
-        ]
-        editor = None
-        for loc in editor_locators:
-            try:
-                if await loc.is_visible(timeout=2000):
-                    editor = loc
-                    break
-            except Exception:
-                pass
-
-        if editor:
-            try:
-                await editor.click(force=True, timeout=3000)
-            except Exception:
-                pass
-        else:
-            try:
-                fallback_loc = page.locator("div#prompt-textarea, div[contenteditable='true']").first
-                await fallback_loc.wait_for(state="attached", timeout=8000)
-                await fallback_loc.click(force=True, timeout=3000)
-            except Exception:
-                pass
-
-        await asyncio.sleep(0.2)
-
-        # Ensure focus is placed on the inner text container via JS
+        editor = page.locator("div#prompt-textarea, div.ProseMirror, div[contenteditable='true']").first
         try:
-            await page.evaluate("""() => {
-                const el = document.querySelector('#prompt-textarea p') 
-                        || document.querySelector('#prompt-textarea')
-                        || document.querySelector('div[contenteditable="true"]');
-                if (el) el.focus();
-            }""")
+            if await editor.is_visible(timeout=1000):
+                await editor.click(force=True, timeout=1500)
         except Exception:
             pass
+
         # Clear editor first to ensure no leftover text
         try:
             await page.keyboard.press("Control+A")
             await page.keyboard.press("Backspace")
-            await asyncio.sleep(0.2)
         except Exception:
             pass
 
         # Record baseline count of ONLY assistant turns BEFORE sending
         assistant_locator = page.locator('div[data-message-author-role="assistant"]')
         baseline_count = await assistant_locator.count()
-        # Insert full multiline prompt safely without triggering premature Enter submit
+
+        # Insert prompt safely & atomically directly on the contenteditable DIV
         await self._safe_insert_multiline_prompt(page, prompt)
 
         # Send
-        send_selectors = [
-            'button#composer-submit-button',
-            'button[data-testid="send-button"]',
-            'button[data-testid="composer-send-button"]',
-            'button[data-testid="fruitjuice-send-button"]',
-            'button[aria-label="Send prompt"]',
-            'button[aria-label="Send message"]',
-            'button#send-button',
-        ]
+        btn = page.locator('button#composer-submit-button, button[data-testid="send-button"]').first
         sent = False
-        for s_sel in send_selectors:
+        try:
+            if await btn.is_visible(timeout=500):
+                await btn.click(force=True, timeout=1000)
+                sent = True
+        except Exception:
+            pass
+
+        if not sent:
             try:
-                s_btn = page.locator(s_sel).first
-                if await s_btn.is_visible(timeout=1000):
-                    await s_btn.click(timeout=2000)
-                    sent = True
-                    break
+                await page.keyboard.press("Enter")
             except Exception:
                 pass
 
-        if not sent:
-            # Fallback: JS click on composer submit button
-            try:
-                sent = await page.evaluate("""() => {
-                    const btn = document.querySelector('#composer-submit-button')
-                             || document.querySelector('button[data-testid="send-button"]')
-                             || document.querySelector('button[aria-label*="Send"]');
-                    if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-                        btn.click();
-                        return true;
-                    }
-                    return false;
-                }""")
-            except Exception:
-                sent = False
-
-        if not sent:
-            await page.keyboard.press("Enter")
-
-        # Verify prompt was dispatched; if editor still has content, click send again
-        for _ in range(8):
-            await asyncio.sleep(0.4)
-            editor_has_text = await page.evaluate("""() => {
-                const el = document.querySelector('#prompt-textarea') || document.querySelector('div[contenteditable="true"]');
-                return el ? (el.innerText || '').trim().length > 10 : false;
-            }""")
-            if not editor_has_text:
-                break
-            try:
-                s_btn = page.locator('button#composer-submit-button, button[data-testid="send-button"]').first
-                if await s_btn.is_visible(timeout=500):
-                    await s_btn.click(timeout=1000)
-                else:
-                    await page.keyboard.press("Enter")
-            except Exception:
-                await page.keyboard.press("Enter")
-
-        # 1. Wait for a NEW assistant response to begin generating (must exceed baseline count or show stop button)
+        # 1. Fast wait for generation to start
         start_time = asyncio.get_event_loop().time()
         stop_btn = page.locator('button[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="توقف"]').first
-        while (asyncio.get_event_loop().time() - start_time) < 30.0:
-            current_count = await assistant_locator.count()
-            if current_count > baseline_count:
-                break
-            try:
-                if await stop_btn.is_visible():
-                    break
-            except Exception:
-                pass
-            await asyncio.sleep(0.5)
 
-        # 2. Wait for streaming to finish (stop button disappears and text length stabilizes)
+        # 2. Real-Time streaming completion detection: breaks immediately once response finishes
         prev_len = 0
         stable_count = 0
         while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
+            await asyncio.sleep(0.2)
             is_stopping = False
             try:
                 is_stopping = await stop_btn.is_visible()
@@ -601,37 +482,26 @@ class BrowserManager:
                 is_stopping = False
 
             current_count = await assistant_locator.count()
-            # Must wait until the new assistant turn is actually present
-            if baseline_count > 0 and current_count <= baseline_count:
-                await asyncio.sleep(0.8)
+            if current_count <= baseline_count:
                 continue
 
-            latest_turn = assistant_locator.nth(current_count - 1) if current_count > 0 else None
-
+            latest_turn = assistant_locator.nth(current_count - 1)
             cur_text = ""
-            if latest_turn:
-                try:
-                    md_box = latest_turn.locator('.markdown, div.prose, div[class*="markdown"]').first
-                    if await md_box.is_visible(timeout=500):
-                        cur_text = await md_box.inner_text()
-                    else:
-                        cur_text = await latest_turn.inner_text()
-                except Exception:
-                    cur_text = ""
+            try:
+                cur_text = (await latest_turn.inner_text()).strip()
+            except Exception:
+                pass
 
-            if cur_text and len(cur_text) > 5:
+            if not is_stopping and len(cur_text) > 0:
                 if len(cur_text) == prev_len:
                     stable_count += 1
                 else:
                     prev_len = len(cur_text)
                     stable_count = 0
 
-            # Completion condition: must be past baseline, stop button gone, text stable for >= 3 checks
-            if (current_count > baseline_count or baseline_count == 0) and not is_stopping and stable_count >= 3 and len(cur_text) > 0:
-                break
-            await asyncio.sleep(0.8)
-
-        await asyncio.sleep(1.0)
+                # If stop button is gone and text is stable for 1 check (0.2s), done!
+                if stable_count >= 1:
+                    break
 
         # 3. Extract STRICTLY from .markdown or div.prose inside the latest assistant turn
         current_count = await assistant_locator.count()
@@ -663,110 +533,59 @@ class BrowserManager:
         ).first
         await input_box.wait_for(state="visible", timeout=30000)
         await input_box.click()
-        await asyncio.sleep(0.2)
 
-        # Clear existing text completely before typing new prompt
-        await page.keyboard.press("Control+A")
-        await page.keyboard.press("Backspace")
-        await asyncio.sleep(0.2)
+        # Clear existing text
+        try:
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Backspace")
+        except Exception:
+            pass
 
         await self._safe_insert_multiline_prompt(page, prompt)
 
         send_btn = page.locator(
             "button[aria-label='Send message'], button[aria-label*='Send' i], button.send-button, button[aria-label='Submit'], button[aria-label*='ارسال' i]"
         ).first
-        if await send_btn.is_visible():
-            await send_btn.click()
+        if await send_btn.is_visible(timeout=500):
+            await send_btn.click(force=True, timeout=1000)
         else:
             await page.keyboard.press("Enter")
 
-        # Allow Gemini a short window to accept the prompt and begin generating
-        await asyncio.sleep(2.0)
-
-        # Streaming stop/busy indicators across locales and UI variants
-        streaming_selectors = [
-            "button[aria-label*='Stop' i]",
-            "button[aria-label*='توقف' i]",
-            "button:has(mat-icon[data-mat-icon-name='stop'])",
-            "button:has(mat-icon[fonticon='stop'])",
-            "mat-icon[data-mat-icon-name='stop']",
-            "mat-icon[fonticon='stop']",
-            "[aria-busy='true']",
-        ]
-        streaming_query = ", ".join(streaming_selectors)
-
         start_time = asyncio.get_event_loop().time()
-        last_text = ""
-        stable_since = None
-        STABLE_REQUIRED_SECONDS = 2.5  # Content must remain unchanged for at least 2.5 seconds
-        MIN_WAIT_SECONDS = 3.0        # Never finish before minimum reasonable response time
 
+        # Real-time completion in Gemini
+        prev_len = 0
+        stable_count = 0
         while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
-            turns_count = await turns_locator.count()
-
-            # Check if stop / busy streaming UI is currently visible
+            await asyncio.sleep(0.2)
             is_streaming_ui = False
             try:
                 stop_locator = page.locator(streaming_query).first
-                if await stop_locator.is_visible(timeout=100):
+                if await stop_locator.is_visible(timeout=50):
                     is_streaming_ui = True
             except Exception:
                 pass
 
-            # Read current text of the latest response to check generation progress
-            current_text = ""
-            if turns_count > baseline_turns_count:
-                latest_turn = turns_locator.nth(turns_count - 1)
-                try:
-                    current_text = (await latest_turn.inner_text()).strip()
-                except Exception:
-                    pass
-            else:
-                try:
-                    fallback_res = page.locator(".markdown-main-panel, message-content, .model-response-text")
-                    fb_count = await fallback_res.count()
-                    if fb_count > 0:
-                        current_text = (await fallback_res.nth(fb_count - 1).inner_text()).strip()
-                except Exception:
-                    pass
+            turns_count = await turns_locator.count()
+            if turns_count <= baseline_turns_count:
+                continue
 
-            elapsed = asyncio.get_event_loop().time() - start_time
-
-            # If text has changed or is still growing, reset the stability timer
-            if current_text != last_text:
-                last_text = current_text
-                stable_since = asyncio.get_event_loop().time()
-
-            # Check if copy-button or send-button has surfaced on the latest turn (strong completion indicator)
-            has_completion_button = False
+            latest_turn = turns_locator.nth(turns_count - 1)
+            cur_text = ""
             try:
-                copy_btn = page.locator("copy-button, button[data-test-id='copy-button'], button[aria-label*='Copy' i], button[aria-label*='کپی' i]").last
-                if await copy_btn.count() > 0 and await copy_btn.is_visible():
-                    has_completion_button = True
+                cur_text = (await latest_turn.inner_text()).strip()
             except Exception:
                 pass
 
-            # Generation is complete when:
-            # 1. Text is non-empty and has actually generated
-            # 2. Stop/streaming UI is no longer visible
-            # 3. Text has remained completely stable for STABLE_REQUIRED_SECONDS (or completion button is visible + 1.2s stability)
-            # 4. Minimum wait threshold has passed
-            is_stable = stable_since is not None and (asyncio.get_event_loop().time() - stable_since) >= STABLE_REQUIRED_SECONDS
-            is_quick_stable = has_completion_button and stable_since is not None and (asyncio.get_event_loop().time() - stable_since) >= 1.2
+            if not is_streaming_ui and len(cur_text) > 0:
+                if len(cur_text) == prev_len:
+                    stable_count += 1
+                else:
+                    prev_len = len(cur_text)
+                    stable_count = 0
 
-            if (
-                current_text
-                and not is_streaming_ui
-                and elapsed >= MIN_WAIT_SECONDS
-                and (is_stable or is_quick_stable)
-            ):
-                break
-
-            await asyncio.sleep(0.6)
-
-        # Additional settle delay to ensure final DOM rendering is complete
-        await asyncio.sleep(0.5)
-
+                if stable_count >= 1:
+                    break
         # Extract complete response HTML from the latest model response turn
         turns_count = await turns_locator.count()
         latest_turn = turns_locator.nth(turns_count - 1) if turns_count > 0 else None
@@ -823,40 +642,51 @@ class BrowserManager:
 
     async def _do_claude_translation(self, page: PlaywrightPage, prompt: str, timeout_seconds: int = 360) -> str:
         input_box = page.locator("div[contenteditable='true'], textarea, div.ProseMirror").first
-        await input_box.wait_for(state="visible", timeout=30000)
-        await asyncio.sleep(0.3)
+        await input_box.wait_for(state="visible", timeout=15000)
+        try:
+            await input_box.click(force=True, timeout=1200)
+        except Exception:
+            pass
 
         # Clear editor first to ensure no leftover text
         try:
             await page.keyboard.press("Control+A")
             await page.keyboard.press("Backspace")
-            await asyncio.sleep(0.2)
         except Exception:
             pass
         await self._safe_insert_multiline_prompt(page, prompt)
-        await asyncio.sleep(0.6)
 
         send_btn = page.locator("button[aria-label='Send Message'], button[aria-label='Send message']").first
-        if await send_btn.is_visible():
-            await send_btn.click()
+        if await send_btn.is_visible(timeout=500):
+            await send_btn.click(force=True, timeout=1000)
         else:
             await page.keyboard.press("Enter")
 
-        await asyncio.sleep(3.5)
+        start_time = asyncio.get_event_loop().time()
         stop_btn = page.locator("button[aria-label='Stop generating'], button[aria-label='Stop responding']").first
-        for _ in range(int(timeout_seconds * 2)):
+
+        # Real-time completion for Claude
+        while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
+            await asyncio.sleep(0.2)
+            is_stopping = False
             try:
-                if not await stop_btn.is_visible():
-                    await asyncio.sleep(1.0)
-                    if not await stop_btn.is_visible():
-                        break
+                is_stopping = await stop_btn.is_visible()
             except Exception:
-                break
-            await asyncio.sleep(0.5)
+                is_stopping = False
 
-        await asyncio.sleep(1.5)
+            if not is_stopping:
+                finished = False
+                try:
+                    finished = await page.evaluate("""() => {
+                        const latest = document.querySelector("div[data-is-streaming='false']")
+                                    || document.querySelector("button[aria-label*='Copy']");
+                        return !!latest;
+                    }""")
+                except Exception:
+                    finished = False
 
-        responses = page.locator("div.font-claude-message, div[data-is-streaming='false']")
+                if finished:
+                    break
         count = await responses.count()
         if count == 0:
             raise RuntimeError("No response found from Claude. Please check the open browser window.")
