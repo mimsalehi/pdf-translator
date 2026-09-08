@@ -9,6 +9,8 @@ from pdf_translator.domain.entities import (
     Project,
     Page,
     TranslationProfile,
+    ChapterConversation,
+    ChapterSummary,
 )
 from pdf_translator.domain.enums import ProviderType
 from pdf_translator.domain.errors import (
@@ -23,6 +25,8 @@ from pdf_translator.domain.ports import (
     PromptTemplateRepositoryPort,
     PageConversationRepositoryPort,
     TranslationProviderPort,
+    ChapterConversationRepositoryPort,
+    ChapterSummaryRepositoryPort,
 )
 from pdf_translator.application.dtos import (
     PromptTemplateDTO,
@@ -30,6 +34,8 @@ from pdf_translator.application.dtos import (
     PromptTemplateUpdateDTO,
     PageConversationDTO,
     PageAskDTO,
+    ChapterConversationDTO,
+    ChapterAskDTO,
 )
 from pdf_translator.adapters.providers.mock_provider import MockTranslationProvider
 from pdf_translator.adapters.providers.openai_provider import OpenAIProvider
@@ -50,13 +56,16 @@ class QAService:
         page_repo: PageRepositoryPort,
         project_repo: ProjectRepositoryPort,
         profile_repo: ProfileRepositoryPort,
+        chapter_conversation_repo: Optional[ChapterConversationRepositoryPort] = None,
+        chapter_summary_repo: Optional[ChapterSummaryRepositoryPort] = None,
     ):
         self.prompt_template_repo = prompt_template_repo
         self.page_conversation_repo = page_conversation_repo
         self.page_repo = page_repo
         self.project_repo = project_repo
         self.profile_repo = profile_repo
-
+        self.chapter_conversation_repo = chapter_conversation_repo
+        self.chapter_summary_repo = chapter_summary_repo
     def _resolve_provider(self, profile: TranslationProfile) -> TranslationProviderPort:
         if profile.provider_type in {
             ProviderType.BROWSER_CHATGPT,
@@ -355,6 +364,160 @@ class QAService:
             id=saved.id,
             project_id=saved.project_id,
             page_number=saved.page_number,
+            selected_text=saved.selected_text,
+            question=saved.question,
+            answer=saved.answer,
+            prompt_template_id=saved.prompt_template_id,
+            created_at=saved.created_at,
+        )
+
+    def list_chapter_conversations(
+        self,
+        chapter_summary_id: str,
+        section_index: Optional[int] = None
+    ) -> List[ChapterConversationDTO]:
+        if not self.chapter_conversation_repo:
+            return []
+        convos = self.chapter_conversation_repo.list_by_chapter(chapter_summary_id, section_index)
+        return [
+            ChapterConversationDTO(
+                id=c.id,
+                chapter_summary_id=c.chapter_summary_id,
+                section_index=c.section_index,
+                selected_text=c.selected_text,
+                question=c.question,
+                answer=c.answer,
+                prompt_template_id=c.prompt_template_id,
+                created_at=c.created_at,
+            )
+            for c in convos
+        ]
+
+    def delete_chapter_conversation(self, conversation_id: str) -> bool:
+        if not self.chapter_conversation_repo:
+            return False
+        return self.chapter_conversation_repo.delete(conversation_id)
+
+    async def ask_chapter_question(
+        self,
+        chapter_summary_id: str,
+        dto: ChapterAskDTO,
+    ) -> ChapterConversationDTO:
+        if not self.chapter_summary_repo or not self.chapter_conversation_repo:
+            raise ValueError("Chapter repositories not configured in QAService")
+
+        summary = self.chapter_summary_repo.get_by_id(chapter_summary_id)
+        if not summary:
+            raise ValueError(f"Chapter summary {chapter_summary_id} not found")
+
+        project = self.project_repo.get_by_id(summary.project_id)
+        if not project:
+            raise ProjectNotFoundError(summary.project_id)
+
+        # 1. Determine relevant context (Section note vs Master summary)
+        sec_idx = dto.section_index if (dto.section_index is not None and dto.section_index > 0) else None
+        context_title = summary.chapter_title
+        context_body = ""
+
+        if sec_idx is not None and summary.chunk_notes_json:
+            import json
+            try:
+                chunks = json.loads(summary.chunk_notes_json)
+                target_chunk = next((c for c in chunks if c.get("section_index") == sec_idx), None)
+                if target_chunk:
+                    context_title = f"{summary.chapter_title} - بخش {sec_idx}: {target_chunk.get('section_title', '')} (صفحات {target_chunk.get('start_page')}-{target_chunk.get('end_page')})"
+                    context_body = target_chunk.get("note", "")
+            except Exception:
+                pass
+
+        if not context_body:
+            context_body = summary.final_summary or ""
+
+        # Retrieve previous conversation history on this chapter note/section
+        previous_convos = self.chapter_conversation_repo.list_by_chapter(chapter_summary_id, sec_idx)
+        history_text = ""
+        if previous_convos:
+            history_lines = []
+            for c in previous_convos[-4:]:
+                snippet_hint = f" (نقل‌قول مربوطه: «{c.selected_text[:60]}...»)" if c.selected_text else ""
+                history_lines.append(f"کاربر: {c.question}{snippet_hint}\nپاسخ دستیار: {c.answer}")
+            history_text = "\n\n".join(history_lines)
+
+        has_new_highlight = bool(dto.selected_text and dto.selected_text.strip())
+        selected_text = dto.selected_text.strip() if has_new_highlight else ""
+
+        full_context = f"موضوع: {context_title}\n\nمتن نوت و خلاصه فصل:\n{context_body}"
+        if history_text:
+            full_context += f"\n\nتاریخچه گفتگوی قبلی در این نوت:\n\"\"\"\n{history_text}\n\"\"\""
+
+        # Template resolution
+        template_obj = None
+        if dto.prompt_template_id:
+            template_obj = self.prompt_template_repo.get_by_id(dto.prompt_template_id)
+        if not template_obj:
+            template_obj = self.prompt_template_repo.get_default()
+
+        if has_new_highlight:
+            if template_obj:
+                final_prompt = (
+                    template_obj.template
+                    .replace("{selected_text}", selected_text)
+                    .replace("{page_text}", full_context)
+                    .replace("{question}", dto.question.strip())
+                )
+            else:
+                final_prompt = f"متن مورد سوال از نوت:\n\"\"\"\n{selected_text}\n\"\"\"\n\nکانتکست نوت فصل:\n\"\"\"\n{full_context}\n\"\"\"\n\nسوال:\n{dto.question.strip()}"
+        else:
+            if template_obj:
+                prompt_clean = re.sub(
+                    r'(?:\n|^)[^\n]*?(?:متن مورد سوال|کد یا متن مورد سوال|متن مورد سوال از کتاب)[^\n]*?\n*"""\s*\{selected_text\}\s*"""\n*',
+                    '\n',
+                    template_obj.template,
+                    flags=re.IGNORECASE
+                ).replace("{selected_text}", "")
+                final_prompt = (
+                    prompt_clean
+                    .replace("{page_text}", full_context)
+                    .replace("{question}", dto.question.strip())
+                )
+            else:
+                final_prompt = f"کانتکست نوت فصل:\n\"\"\"\n{full_context}\n\"\"\"\n\nسوال:\n{dto.question.strip()}"
+
+        # Resolve provider
+        profile = None
+        if project.profile_id:
+            profile = self.profile_repo.get_by_id(project.profile_id)
+        if not profile:
+            profile = self.profile_repo.get_default()
+
+        provider = self._resolve_provider(profile)
+
+        system_instruction = (
+            "شما دستیار هوشمند مطالعه و پژوهش هستید. پاسخ‌ها باید کاملاً ساختاریافته، دقیق، تحلیلی، عمیق و به زبان فارسی روان، خودمانی و شیوا ارائه شوند. "
+            "فرمول‌های ریاضی، متغیرها و معادلات علمی حتماً باید در قالب استاندارد LaTeX بین $...$ (درون‌خطی) یا $$...$$ (بلوکی) نوشته شوند."
+        )
+
+        answer = await provider.translate(
+            source_text=final_prompt,
+            source_language=project.source_language,
+            target_language="Persian",
+            system_prompt=system_instruction,
+        )
+
+        convo = ChapterConversation(
+            chapter_summary_id=chapter_summary_id,
+            section_index=sec_idx,
+            selected_text=selected_text if has_new_highlight else None,
+            question=dto.question.strip(),
+            answer=answer.strip(),
+            prompt_template_id=template_obj.id if template_obj else None,
+        )
+        saved = self.chapter_conversation_repo.save(convo)
+
+        return ChapterConversationDTO(
+            id=saved.id,
+            chapter_summary_id=saved.chapter_summary_id,
+            section_index=saved.section_index,
             selected_text=saved.selected_text,
             question=saved.question,
             answer=saved.answer,

@@ -18,7 +18,7 @@ from pdf_translator.web.routes.translation_routes import router as translation_r
 from pdf_translator.web.routes.export_routes import router as export_router
 from pdf_translator.web.routes.settings_routes import router as settings_router
 from pdf_translator.web.routes.qa_routes import router as qa_router
-
+from pdf_translator.web.routes.chapter_routes import router as chapter_router
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(export_router)
     app.include_router(settings_router)
     app.include_router(qa_router)
-
+    app.include_router(chapter_router)
     return app
 
 app = create_app()

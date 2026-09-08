@@ -1,6 +1,6 @@
 """API routes for In-Reading AI Assistant and Prompt Template management."""
-from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import List, Optional
 from sqlmodel import Session
 
 from pdf_translator.adapters.storage.db import get_session
@@ -10,6 +10,8 @@ from pdf_translator.adapters.storage.sqlite_repo import (
     SQLitePageRepository,
     SQLiteProjectRepository,
     SQLiteProfileRepository,
+    SQLiteChapterConversationRepository,
+    SQLiteChapterSummaryRepository,
 )
 from pdf_translator.application.qa_service import QAService
 from pdf_translator.application.dtos import (
@@ -18,6 +20,8 @@ from pdf_translator.application.dtos import (
     PromptTemplateUpdateDTO,
     PageConversationDTO,
     PageAskDTO,
+    ChapterConversationDTO,
+    ChapterAskDTO,
 )
 from pdf_translator.domain.errors import ProjectNotFoundError, PageNotFoundError, TranslationProviderError
 
@@ -30,6 +34,8 @@ def get_qa_service(session: Session = Depends(get_session)) -> QAService:
         page_repo=SQLitePageRepository(session),
         project_repo=SQLiteProjectRepository(session),
         profile_repo=SQLiteProfileRepository(session),
+        chapter_conversation_repo=SQLiteChapterConversationRepository(session),
+        chapter_summary_repo=SQLiteChapterSummaryRepository(session),
     )
 
 
@@ -91,3 +97,40 @@ def delete_conversation(conversation_id: str, service: QAService = Depends(get_q
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
     return {"success": True, "message": "Conversation deleted."}
+
+
+# --- Chapter Notes Q&A Assistant Endpoints ---
+
+@router.get("/api/chapters/{chapter_id}/conversations", response_model=List[ChapterConversationDTO])
+def get_chapter_conversations(
+    chapter_id: str,
+    section_index: Optional[int] = Query(None),
+    service: QAService = Depends(get_qa_service),
+):
+    return service.list_chapter_conversations(chapter_id, section_index)
+
+
+@router.post("/api/chapters/{chapter_id}/ask", response_model=ChapterConversationDTO)
+async def ask_chapter_question(
+    chapter_id: str,
+    dto: ChapterAskDTO,
+    service: QAService = Depends(get_qa_service),
+):
+    try:
+        return await service.ask_chapter_question(chapter_id, dto)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except ProjectNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except TranslationProviderError as e:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Chapter QA failed: {str(e)}")
+
+
+@router.delete("/api/chapter-conversations/{conversation_id}", status_code=status.HTTP_200_OK)
+def delete_chapter_conversation(conversation_id: str, service: QAService = Depends(get_qa_service)):
+    success = service.delete_chapter_conversation(conversation_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chapter conversation not found.")
+    return {"success": True, "message": "Chapter conversation deleted."}
