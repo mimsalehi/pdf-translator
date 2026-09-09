@@ -134,6 +134,55 @@
   </div>
 </div>
 
+<!-- Full Backup & Data Portability Card -->
+<div class="card" style="max-width: 800px; margin-top: 2rem; border-color: rgba(99, 102, 241, 0.4); background: linear-gradient(180deg, rgba(30, 41, 59, 0.5) 0%, rgba(15, 23, 42, 0.7) 100%);">
+  <div style="margin-bottom: 1.25rem;">
+    <h2 style="font-size: 1.18rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span>💾</span> پشتیبان‌گیری و جابه‌جایی کامل داده‌ها (Full Backup & Restore)
+    </h2>
+    <p style="font-size: 0.88rem; color: var(--color-text-muted); margin: 0; line-height: 1.6;">
+      تمام پروژه‌ها، متون ترجمه، خلاصه‌های فصول و تاریخچه چت‌های شما به همراه فایل‌های PDF اصلی و تصاویر در یک فایل ZIP جامع بسته‌بندی می‌شود. می‌توانید این فایل را در هر کامپیوتر دیگری آپلود کنید تا سیستم به‌صورت خودکار تمام مسیرها را با سیستم جدید هماهنگ (Rebase) کند.
+    </p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-top: 1rem;">
+    <!-- Export Box -->
+    <div style="background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+          <span>📦</span> تهیه‌ی نسخه پشتیبان (Export)
+        </h3>
+        <p style="font-size: 0.82rem; color: var(--color-text-muted); line-height: 1.6; margin-bottom: 1rem;">
+          ایجاد فایل پشتیبان جامع از دیتابیس SQLite و تمام پوشه‌های <code>projects/</code> در قالب یک آرشیو زیپ یکپارچه.
+        </p>
+      </div>
+      <button type="button" id="btn-export-backup" class="btn btn-primary btn-sm" onclick="downloadFullBackup()" style="display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+        <span>📥</span> دانلود کامل فایل پشتیبان (.zip)
+      </button>
+    </div>
+
+    <!-- Restore Box -->
+    <div style="background: var(--color-surface-subtle); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between;">
+      <div>
+        <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.4rem;">
+          <span>🔄</span> بازیابی و انتقال داده‌ها (Restore)
+        </h3>
+        <p style="font-size: 0.82rem; color: var(--color-text-muted); line-height: 1.6; margin-bottom: 0.75rem;">
+          انتخاب فایل ZIP پشتیبان برای بازیابی روی این کامپیوتر. (از دیتابیس فعلی پیش از جایگزینی یک نسخه بک‌آپ احتیاطی گرفته می‌شود).
+        </p>
+      </div>
+      <div>
+        <input type="file" id="restore-file-input" accept=".zip" style="display: none;" onchange="handleBackupFileSelected(event)">
+        <button type="button" id="btn-restore-backup" class="btn btn-secondary btn-sm" onclick="document.getElementById('restore-file-input').click()" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.4rem;">
+          <span>📤</span> انتخاب و بازیابی فایل ZIP...
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="backup-status-box" style="display: none; margin-top: 1rem; padding: 0.85rem 1.15rem; border-radius: var(--radius-sm); font-size: 0.85rem; line-height: 1.6;"></div>
+</div>
+
 <!-- Add/Edit Chapter Note Template Modal -->
 <div id="chapter-template-modal" class="reader-modal-overlay" style="display: none;">
   <div class="reader-modal-dialog" style="max-width: 750px; max-height: 90vh;">
@@ -536,6 +585,130 @@
     }
   }
 
+
+  // Backup & Restore functionality
+  async function downloadFullBackup() {
+    const btn = document.getElementById('btn-export-backup');
+    const statusBox = document.getElementById('backup-status-box');
+    const originalText = btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> در حال آماده‌سازی و فشرده‌سازی...';
+    if (statusBox) {
+      statusBox.style.display = 'block';
+      statusBox.style.background = 'rgba(59, 130, 246, 0.1)';
+      statusBox.style.border = '1px solid rgba(59, 130, 246, 0.3)';
+      statusBox.style.color = '#60a5fa';
+      statusBox.innerHTML = 'در حال ایجاد اسنپ‌شات امن از دیتابیس و فشرده‌سازی فایل‌های پروژه‌ها... این فرایند ممکن است بسته به حجم فایل‌ها چند ثانیه طول بکشد.';
+    }
+
+    try {
+      const response = await fetch('/api/backup/export');
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || 'خطا در ساخت فایل پشتیبان');
+      }
+
+      const disposition = response.headers.get('Content-Disposition');
+      let filename = 'pdf_translator_backup.zip';
+      if (disposition && disposition.indexOf('filename=') !== -1) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+        if (matches != null && matches[1]) {
+          filename = matches[1].replace(/['"]/g, '');
+        }
+      }
+
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      if (statusBox) {
+        statusBox.style.background = 'rgba(16, 185, 129, 0.1)';
+        statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+        statusBox.style.color = '#34d399';
+        statusBox.innerHTML = `✓ فایل پشتیبان کامل با نام <strong>${filename}</strong> با موفقیت دانلود شد.`;
+      }
+      if (window.showToast) showToast('فایل پشتیبان با موفقیت ایجاد و دانلود شد.', 'success');
+    } catch (e) {
+      if (statusBox) {
+        statusBox.style.background = 'rgba(239, 68, 68, 0.1)';
+        statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        statusBox.style.color = '#f87171';
+        statusBox.innerHTML = `خطا در دریافت فایل پشتیبان: ${e.message}`;
+      }
+      if (window.showToast) showToast('خطا: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  }
+
+  async function handleBackupFileSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    if (!confirm(`آیا از بازیابی فایل پشتیبان «${file.name}» اطمینان دارید؟\nاطلاعات دیتابیس و فایل‌ها بازیابی و مسیرها بازنشانی خواهند شد.`)) {
+      event.target.value = '';
+      return;
+    }
+
+    const btn = document.getElementById('btn-restore-backup');
+    const statusBox = document.getElementById('backup-status-box');
+    const originalText = btn.innerHTML;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span>⏳</span> در حال ارسال و بازیابی...';
+    if (statusBox) {
+      statusBox.style.display = 'block';
+      statusBox.style.background = 'rgba(59, 130, 246, 0.1)';
+      statusBox.style.border = '1px solid rgba(59, 130, 246, 0.3)';
+      statusBox.style.color = '#60a5fa';
+      statusBox.innerHTML = 'در حال آپلود، استخراج فایل‌ها و به‌روزرسانی مسیرهای پروژه‌ها روی این کامپیوتر...';
+    }
+
+    const formData = new FormData();
+    formData.append('backup_file', file);
+
+    try {
+      const res = await fetch('/api/backup/restore', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (statusBox) {
+          statusBox.style.background = 'rgba(16, 185, 129, 0.1)';
+          statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          statusBox.style.color = '#34d399';
+          statusBox.innerHTML = `✓ ${data.message || 'بازیابی با موفقیت انجام شد.'} (${data.projects_restored || 0} پروژه بازیابی شد). در حال بارگذاری مجدد صفحه...`;
+        }
+        if (window.showToast) showToast('بازیابی کامل داده‌ها با موفقیت انجام شد.', 'success');
+        setTimeout(() => {
+          window.location.reload();
+        }, 1800);
+      } else {
+        throw new Error(data.detail || 'خطا در بازیابی پشتیبان');
+      }
+    } catch (err) {
+      if (statusBox) {
+        statusBox.style.background = 'rgba(239, 68, 68, 0.1)';
+        statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+        statusBox.style.color = '#f87171';
+        statusBox.innerHTML = `خطا در بازیابی فایل: ${err.message}`;
+      }
+      if (window.showToast) showToast('خطا: ' + err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+      event.target.value = '';
+    }
+  }
   // Load chapter templates on page load
   loadSettingsChapterTemplates();
 </script>

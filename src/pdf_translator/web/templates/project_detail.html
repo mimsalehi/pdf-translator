@@ -244,8 +244,25 @@
         📑 ۱. خلاصه‌ها و یادداشت‌های بخش‌به‌بخش (<span id="chapter-view-sections-count">۰</span> بخش)
       </button>
       <button type="button" class="btn btn-sm btn-secondary" id="btn-chapter-view-master" onclick="switchChapterViewTab('master')">
-        🏆 ۲. خلاصه جامع و سند مرجع کل فصل
+        <span id="btn-chapter-master-label">🏆 ۲. خلاصه جامع و سند مرجع کل فصل</span>
       </button>
+    </div>
+    <!-- Live Processing Status Banner Inside Modal -->
+    <div id="chapter-modal-live-banner" class="chapter-modal-live-banner" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.45rem; flex-wrap: wrap; gap: 0.5rem;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="live-pulse-dot"></span>
+          <strong id="modal-banner-status" style="font-size: 0.9rem; color: #38bdf8;">در حال استخراج و خلاصه‌سازی زنده...</strong>
+        </div>
+        <span id="modal-banner-pct" style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">۰٪</span>
+      </div>
+      <div class="chapter-progress-track" style="height: 6px; margin-bottom: 0.45rem;">
+        <div id="modal-banner-progress-fill" class="chapter-progress-bar-fill" style="width: 5%;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--reader-text-muted); flex-wrap: wrap; gap: 0.5rem;">
+        <span id="modal-banner-msg">در حال پردازش...</span>
+        <span style="color: #64748b;">⚡ هر بخش به محض خلاصه شدن در این صفحه ظاهر می‌شود و می‌توانید بلافاصله مطالعه کنید</span>
+      </div>
     </div>
     <div id="view-chapter-body" class="reader-modal-content" style="direction: rtl;">
       <div id="view-chapter-sections-pane" style="display: block;">
@@ -490,12 +507,30 @@
         const isProcessing = ch.status === 'PROCESSING' || ch.status === 'PENDING';
         if (isProcessing) hasProcessing = true;
 
+        let parsed = [];
+        try {
+          if (ch.chunk_notes_json) parsed = JSON.parse(ch.chunk_notes_json);
+        } catch (e) {
+          parsed = [];
+        }
+
         let statusBadge = '';
         let bodyContent = '';
         let actionBtns = '';
 
         if (isProcessing) {
           statusBadge = `<span class="badge badge-translating">⏳ در حال پردازش (${ch.progress_percent}%)</span>`;
+          const readyNotice = parsed.length > 0 ? `
+            <div style="margin-top: 0.65rem; padding: 0.45rem 0.75rem; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: var(--radius-sm); font-size: 0.82rem; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
+              <span>⚡ <strong>${parsed.length} بخش</strong> خلاصه‌شده و آماده مطالعه</span>
+              <span style="font-size: 0.76rem; color: var(--color-text-dim);">مطالعه همگام با استخراج</span>
+            </div>
+          ` : `
+            <div style="margin-top: 0.5rem; font-size: 0.78rem; color: var(--color-text-dim);">
+              💡 به محض خلاصه‌شدن هر بخش، دکمه مطالعه فعال می‌شود.
+            </div>
+          `;
+
           bodyContent = `
             <div class="chapter-progress-box">
               <div class="chapter-progress-track">
@@ -506,8 +541,15 @@
                 <span>${ch.progress_percent}%</span>
               </div>
             </div>
+            ${readyNotice}
           `;
+
+          const viewBtn = parsed.length > 0
+            ? `<button class="btn btn-sm btn-primary" onclick="openViewChapterModal('${ch.id}')" title="مطالعه بخش‌های آماده همگام با ادامه استخراج">📖 مطالعه بخش‌های آماده (${parsed.length})</button>`
+            : `<button class="btn btn-sm btn-secondary" onclick="openViewChapterModal('${ch.id}')" title="مشاهده زنده روند استخراج و مطالعه بخش‌ها">👁️ مشاهده زنده</button>`;
+
           actionBtns = `
+            ${viewBtn}
             <button class="btn btn-sm btn-danger" onclick="promptDeleteChapter('${ch.id}', '${ch.chapter_title.replace(/'/g, "\\'")}')" style="margin-right: auto;">🗑️ لغو و حذف</button>
           `;
         } else if (ch.status === 'COMPLETED') {
@@ -534,7 +576,11 @@
               <span>${ch.progress_message || ch.error_message || 'پردازش نوت با خطا یا توقف مواجه شد.'}</span>
             </div>
           `;
+          const readSavedBtn = parsed.length > 0
+            ? `<button class="btn btn-sm btn-primary" onclick="openViewChapterModal('${ch.id}')" title="مطالعه ${parsed.length} بخش ذخیره‌شده">📖 مطالعه ${parsed.length} بخش</button>`
+            : '';
           actionBtns = `
+            ${readSavedBtn}
             <button class="btn btn-sm btn-primary" onclick="resumeChapter('${ch.id}')" title="ادامه استخراج از بخش‌های باقیمانده بدون تکرار کارهای قبلی">▶️ ادامه پردازش (Resume)</button>
             <button class="btn btn-sm btn-secondary" onclick="regenerateChapter('${ch.id}')" title="پاک‌کردن کش و شروع مجدد از ابتدا">🔄 شروع از اول</button>
             <button class="btn btn-sm btn-danger" onclick="promptDeleteChapter('${ch.id}', '${ch.chapter_title.replace(/'/g, "\\'")}')" style="margin-right: auto;">🗑️ حذف</button>
@@ -542,12 +588,9 @@
         }
         const sourceBadge = ch.source_type === 'translation' ? 'منبع: ترجمه فارسی' : 'منبع: متن اصلی (English)';
         let sectionsBadge = '';
-        try {
-          const parsed = ch.chunk_notes_json ? JSON.parse(ch.chunk_notes_json) : [];
-          if (parsed.length > 0) {
-            sectionsBadge = `<span class="chapter-source-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">📑 ${parsed.length} بخش سرفصل + خلاصه جامع</span>`;
-          }
-        } catch (e) {}
+        if (parsed.length > 0) {
+          sectionsBadge = `<span class="chapter-source-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">📑 ${parsed.length} بخش سرفصل + خلاصه جامع</span>`;
+        }
 
         return `
           <div class="chapter-card" id="chapter-card-${ch.id}">
@@ -567,6 +610,15 @@
           </div>
         `;
       }).join('');
+
+      // Synchronize open reader modal with fresh polled data
+      const openModal = document.getElementById('view-chapter-modal');
+      if (openModal && openModal.style.display !== 'none' && activeViewChapterData) {
+        const matchingCh = chapters.find(c => c.id === activeViewChapterData.id);
+        if (matchingCh) {
+          syncActiveChapterViewModal(matchingCh);
+        }
+      }
 
       // Polling management: auto-refresh every 2.5s if any item is processing
       if (hasProcessing) {
@@ -709,6 +761,7 @@
         document.getElementById('create-chapter-form').reset();
         if (window.showToast) showToast('نوت‌برداری فصل در پس‌زمینه آغاز شد 🚀', 'success');
         loadChapterSummaries();
+        openViewChapterModal(data.id);
       } else {
         if (window.showToast) showToast(data.detail || 'خطا در ثبت نوت فصل.', 'error');
       }
@@ -719,27 +772,150 @@
     }
   }
 
-  // Modal: View Chapter Note
+  // Modal: View Chapter Note & Live Reader
   let activeViewChapterData = null;
 
-  async function openViewChapterModal(chapterId) {
-    try {
-      const res = await fetch(`/api/chapters/${chapterId}`);
-      if (!res.ok) throw new Error('خطا در دریافت اطلاعات نوت');
-      activeViewChapterData = await res.json();
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 
-      document.getElementById('view-chapter-title-text').textContent = activeViewChapterData.chapter_title;
-      document.getElementById('view-chapter-pages-info').textContent = `— صفحات ${activeViewChapterData.start_page} الی ${activeViewChapterData.end_page}`;
-      document.getElementById('btn-download-chapter-md').href = `/api/chapters/${chapterId}/export?format=md`;
-      document.getElementById('btn-download-chapter-docx').href = `/api/chapters/${chapterId}/export?format=docx`;
-      const masterPane = document.getElementById('view-chapter-master-pane');
-      const sectionsPane = document.getElementById('view-chapter-sections-pane');
-      const sectionsCountBadge = document.getElementById('chapter-view-sections-count');
-      
-      switchChapterViewTab('sections');
+  function enhanceSectionCard(cardEl) {
+    if (!cardEl) return;
+    if (window.renderMathInElement) {
+      try {
+        renderMathInElement(cardEl, {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false},
+            {left: '\\(', right: '\\)', display: false},
+            {left: '\\[', right: '\\]', display: true}
+          ],
+          throwOnError: false
+        });
+      } catch (err) {
+        console.warn('KaTeX render error:', err);
+      }
+    }
+    if (window.enhanceCodeBlocks) {
+      window.enhanceCodeBlocks(cardEl);
+    }
+  }
 
-      // 1. Render Master Summary
-      const raw = activeViewChapterData.final_summary || 'متنی برای این فصل ثبت نشده است.';
+  function scrollToSection(secIdx) {
+    const el = document.getElementById(`ch-section-card-${secIdx}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const body = el.querySelector('.chapter-section-body');
+      const arrow = el.querySelector('.accordion-arrow');
+      if (body && body.style.display === 'none') {
+        body.style.display = 'block';
+        if (arrow) arrow.textContent = '▼';
+      }
+    }
+  }
+
+  function renderQuickNav(sections) {
+    if (!sections || sections.length === 0) return '';
+    return `
+      <div class="chapter-sections-quicknav" id="chapter-sections-quicknav">
+        <span style="font-size: 0.82rem; font-weight: 600; color: var(--reader-text-muted); display: flex; align-items: center; gap: 0.35rem;">
+          📑 دسترسی سریع به بخش‌ها:
+        </span>
+        <div id="quicknav-chips" style="display: flex; gap: 0.4rem; flex-wrap: wrap;">
+          ${sections.map((s, idx) => {
+            const sIdx = s.section_index || (idx + 1);
+            return `
+              <button type="button" class="quicknav-chip" onclick="scrollToSection(${sIdx})" title="پرش به بخش ${sIdx}">
+                بخش ${sIdx}: ${escapeHtml((s.section_title || '').substring(0, 30))}
+              </button>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  function renderSectionCardHtml(s, secIdx) {
+    const rawNote = s.note || '';
+    const rendered = window.renderMarkdownWithKatex 
+      ? renderMarkdownWithKatex(rawNote) 
+      : (window.marked ? marked.parse(rawNote) : rawNote);
+
+    return `
+      <div class="chapter-section-note-card" id="ch-section-card-${secIdx}">
+        <div class="chapter-section-header" onclick="toggleSectionAccordion(this)">
+          <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+            <span class="badge badge-primary" style="font-size: 0.78rem; padding: 0.2rem 0.55rem;">بخش ${secIdx}</span>
+            <strong style="font-size: 1rem;">${escapeHtml(s.section_title || '')}</strong>
+            <span class="chapter-page-badge" style="font-size: 0.75rem;">صفحات ${s.start_page} الی ${s.end_page}</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.6rem;">
+            <button type="button" class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openChapterAssistantForSection(${secIdx})" title="پرسش از دستیار هوشمند درباره این بخش" style="font-size: 0.78rem; padding: 0.2rem 0.65rem;">
+              ✨ دستیار این بخش
+            </button>
+            <span class="accordion-arrow" style="font-size: 0.85rem; color: #94a3b8;">▼</span>
+          </div>
+        </div>
+        <div class="chapter-section-body" style="display: block;">
+          ${rendered}
+        </div>
+      </div>
+    `;
+  }
+
+  function updateModalLiveBanner(data) {
+    const banner = document.getElementById('chapter-modal-live-banner');
+    if (!banner) return;
+    const isProcessing = data.status === 'PROCESSING' || data.status === 'PENDING';
+    const isFailed = data.status === 'FAILED';
+
+    if (isProcessing) {
+      banner.style.display = 'block';
+      document.getElementById('modal-banner-status').textContent = 'در حال استخراج و خلاصه‌سازی زنده...';
+      document.getElementById('modal-banner-status').style.color = '#38bdf8';
+      document.getElementById('modal-banner-pct').textContent = `${data.progress_percent}%`;
+      document.getElementById('modal-banner-progress-fill').style.width = `${Math.max(5, data.progress_percent)}%`;
+      document.getElementById('modal-banner-msg').textContent = data.progress_message || 'در حال تحلیل و استخراج بخش‌ها...';
+    } else if (isFailed) {
+      banner.style.display = 'block';
+      document.getElementById('modal-banner-status').textContent = 'پردازش متوقف شد';
+      document.getElementById('modal-banner-status').style.color = '#f87171';
+      document.getElementById('modal-banner-pct').textContent = `${data.progress_percent}%`;
+      document.getElementById('modal-banner-progress-fill').style.width = `${data.progress_percent}%`;
+      document.getElementById('modal-banner-msg').innerHTML = `
+        ${escapeHtml(data.progress_message || data.error_message || 'خطا در پردازش')}
+        <button class="btn btn-sm btn-primary" onclick="resumeChapter('${data.id}')" style="margin-right: 0.5rem; padding: 0.15rem 0.5rem; font-size: 0.76rem;">▶️ ادامه پردازش</button>
+      `;
+    } else {
+      banner.style.display = 'none';
+    }
+  }
+
+  function updateChapterQAScope(sections) {
+    const scopeSelect = document.getElementById('ch-qa-scope-select');
+    if (!scopeSelect) return;
+    const currentVal = scopeSelect.value;
+    scopeSelect.innerHTML = '<option value="0">🏆 کل فصل (خلاصه جامع و سنتز نهایی)</option>' +
+      sections.map((s, idx) => `<option value="${s.section_index || idx + 1}">بخش ${s.section_index || idx + 1}: ${escapeHtml(s.section_title || '')} (ص ${s.start_page}-${s.end_page})</option>`).join('');
+    if (currentVal && scopeSelect.querySelector(`option[value="${currentVal}"]`)) {
+      scopeSelect.value = currentVal;
+    }
+  }
+
+  function renderMasterSummaryPane(data) {
+    const masterPane = document.getElementById('view-chapter-master-pane');
+    const masterLabel = document.getElementById('btn-chapter-master-label');
+    if (!masterPane) return;
+
+    if (data.final_summary) {
+      if (masterLabel) masterLabel.textContent = '🏆 ۲. خلاصه جامع و سند مرجع کل فصل ✨';
+      const raw = data.final_summary;
       masterPane.innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; background: var(--reader-surface-subtle); border: 1px solid var(--reader-border); border-radius: var(--radius-md); padding: 0.75rem 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
           <span style="font-size: 0.95rem; color: var(--reader-text-muted); font-weight: 600;">🏆 سند مرجع و خلاصه جامع کل فصل</span>
@@ -751,69 +927,177 @@
           ${window.renderMarkdownWithKatex ? renderMarkdownWithKatex(raw) : (window.marked ? marked.parse(raw) : raw)}
         </div>
       `;
+      enhanceSectionCard(masterPane);
+    } else {
+      const isProc = data.status === 'PROCESSING' || data.status === 'PENDING';
+      if (masterLabel) masterLabel.textContent = isProc ? '🏆 ۲. خلاصه جامع کل فصل (در حال پردازش...)' : '🏆 ۲. خلاصه جامع کل فصل';
+      masterPane.innerHTML = `
+        <div style="text-align: center; padding: 3.5rem 1.5rem; background: var(--reader-surface-subtle); border: 1px dashed var(--reader-border); border-radius: var(--radius-md); margin-top: 1rem;">
+          <div style="font-size: 2.8rem; margin-bottom: 1rem;">🏆</div>
+          <h3 style="font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--reader-heading);">خلاصه جامع و سند مرجع کل فصل</h3>
+          <p style="font-size: 0.9rem; color: var(--reader-text-muted); max-width: 540px; margin: 0 auto 1.5rem; line-height: 1.7;">
+            ${isProc ? 'سند خلاصه کلی و سنتز نهایی، پس از اتمام استخراج تمام بخش‌های فصل به صورت خودکار تدوین خواهد شد. در حال حاضر می‌توانید بخش‌های خلاصه‌شده را در تب بخش‌به‌بخش مطالعه نمایید.' : 'متنی برای خلاصه جامع ثبت نشده است.'}
+          </p>
+          <button type="button" class="btn btn-sm btn-primary" onclick="switchChapterViewTab('sections')">
+            ← بازگشت به مطالعه بخش‌های آماده
+          </button>
+        </div>
+      `;
+    }
+  }
 
-      // 2. Render Section-by-Section Heading Notes
-      let sections = [];
-      if (activeViewChapterData.chunk_notes_json) {
-        try {
-          sections = JSON.parse(activeViewChapterData.chunk_notes_json);
-        } catch (e) {
-          sections = [];
-        }
+  function renderSectionsPane(data) {
+    const sectionsPane = document.getElementById('view-chapter-sections-pane');
+    const sectionsCountBadge = document.getElementById('chapter-view-sections-count');
+    if (!sectionsPane) return;
+
+    let sections = [];
+    if (data.chunk_notes_json) {
+      try {
+        sections = JSON.parse(data.chunk_notes_json);
+      } catch (e) {
+        sections = [];
       }
+    }
 
-      sectionsCountBadge.textContent = sections.length.toString();
+    if (sectionsCountBadge) sectionsCountBadge.textContent = sections.length.toString();
+    updateChapterQAScope(sections);
 
-      // Populate Scope Selector inside Chapter QA Drawer
-      const scopeSelect = document.getElementById('ch-qa-scope-select');
-      if (scopeSelect) {
-        scopeSelect.innerHTML = '<option value="0">🏆 کل فصل (خلاصه جامع و سنتز نهایی)</option>' +
-          sections.map((s, idx) => `<option value="${s.section_index || idx + 1}">بخش ${s.section_index || idx + 1}: ${s.section_title} (ص ${s.start_page}-${s.end_page})</option>`).join('');
-      }
+    if (sections.length > 0) {
+      sectionsPane.innerHTML = renderQuickNav(sections) +
+        `<div id="chapter-sections-cards-container">` +
+        sections.map((s, idx) => renderSectionCardHtml(s, s.section_index || idx + 1)).join('') +
+        `</div>`;
 
-      if (sections.length > 0) {
-        sectionsPane.innerHTML = sections.map((s, idx) => `
-          <div class="chapter-section-note-card" id="ch-section-card-${s.section_index || idx + 1}">
-            <div class="chapter-section-header" onclick="toggleSectionAccordion(this)">
-              <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem;">
-                <strong>بخش ${s.section_index || idx + 1}: ${s.section_title}</strong>
-                <span class="chapter-page-badge">صفحات ${s.start_page} الی ${s.end_page}</span>
-              </div>
-              <div style="display: flex; align-items: center; gap: 0.6rem;">
-                <button type="button" class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openChapterAssistantForSection(${s.section_index || idx + 1})" title="پرسش از دستیار هوشمند درباره این بخش" style="font-size: 0.78rem; padding: 0.2rem 0.65rem;">
-                  ✨ دستیار این بخش
-                </button>
-                <span class="accordion-arrow" style="font-size: 0.85rem; color: #94a3b8;">▼</span>
-              </div>
-            </div>
-            <div class="chapter-section-body" style="display: block;">
-              ${window.renderMarkdownWithKatex ? renderMarkdownWithKatex(s.note || '') : (window.marked ? marked.parse(s.note || '') : s.note || '')}
-            </div>
+      sectionsPane.querySelectorAll('.chapter-section-note-card').forEach(enhanceSectionCard);
+    } else {
+      const isProc = data.status === 'PROCESSING' || data.status === 'PENDING';
+      if (isProc) {
+        sectionsPane.innerHTML = `
+          <div id="ch-empty-processing-state" style="text-align: center; color: var(--color-text-muted); padding: 3.5rem 1.5rem; background: var(--reader-surface-subtle); border-radius: var(--radius-md); border: 1px dashed var(--reader-border);">
+            <div style="font-size: 2.5rem; margin-bottom: 0.8rem; animation: pulse 1.5s infinite;">⏳</div>
+            <h3 style="font-size: 1.15rem; font-weight: 600; color: var(--reader-heading); margin-bottom: 0.5rem;">
+              در حال استخراج و خلاصه‌سازی اولین بخش فصل...
+            </h3>
+            <p style="font-size: 0.9rem; max-width: 520px; margin: 0 auto; line-height: 1.7; color: var(--reader-text-muted);">
+              به محض تکمیل نوت بخش اول، متن آن بدون نیاز به رفرش یا بستن صفحه به صورت زنده در اینجا قرار خواهد گرفت و می‌توانید همزمان با ادامه استخراج بقیه بخش‌ها، مطالعه را آغاز کنید.
+            </p>
           </div>
-        `).join('');
+        `;
       } else {
         sectionsPane.innerHTML = '<div style="text-align: center; color: var(--color-text-muted); padding: 2rem;">نوت تفکیک‌شده‌ای برای این فصل ثبت نشده است.</div>';
       }
+    }
+  }
 
-      // Render LaTeX Formulas via KaTeX on entire body
-      const bodyEl = document.getElementById('view-chapter-body');
-      if (window.renderMathInElement) {
-        try {
-          renderMathInElement(bodyEl, {
-            delimiters: [
-              {left: '$$', right: '$$', display: true},
-              {left: '$', right: '$', display: false},
-              {left: '\\(', right: '\\)', display: false},
-              {left: '\\[', right: '\\]', display: true}
-            ],
-            throwOnError: false
-          });
-        } catch (err) {
-          console.warn('KaTeX render error:', err);
-        }
+  function syncActiveChapterViewModal(ch) {
+    if (!activeViewChapterData || activeViewChapterData.id !== ch.id) return;
+    const viewModal = document.getElementById('view-chapter-modal');
+    if (!viewModal || viewModal.style.display === 'none') return;
+
+    // 1. Live Banner
+    updateModalLiveBanner(ch);
+
+    // 2. Sections
+    let newSections = [];
+    try {
+      if (ch.chunk_notes_json) newSections = JSON.parse(ch.chunk_notes_json);
+    } catch (e) {
+      newSections = [];
+    }
+
+    const sectionsCountBadge = document.getElementById('chapter-view-sections-count');
+    if (sectionsCountBadge) sectionsCountBadge.textContent = newSections.length.toString();
+    updateChapterQAScope(newSections);
+
+    const sectionsPane = document.getElementById('view-chapter-sections-pane');
+    if (sectionsPane && newSections.length > 0) {
+      const emptyState = document.getElementById('ch-empty-processing-state');
+      if (emptyState) {
+        sectionsPane.innerHTML = renderQuickNav(newSections) + '<div id="chapter-sections-cards-container"></div>';
       }
 
-      if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(bodyEl);
+      let cardsContainer = document.getElementById('chapter-sections-cards-container');
+      if (!cardsContainer) {
+        const qNav = document.getElementById('chapter-sections-quicknav');
+        if (!qNav) {
+          sectionsPane.insertAdjacentHTML('afterbegin', renderQuickNav(newSections));
+        }
+        cardsContainer = document.createElement('div');
+        cardsContainer.id = 'chapter-sections-cards-container';
+        sectionsPane.appendChild(cardsContainer);
+      }
+
+      let addedCount = 0;
+      let lastAddedTitle = '';
+      let lastAddedIdx = 0;
+
+      newSections.forEach((s, idx) => {
+        const secIdx = s.section_index || (idx + 1);
+        const existingCard = document.getElementById(`ch-section-card-${secIdx}`);
+        if (!existingCard) {
+          const temp = document.createElement('div');
+          temp.innerHTML = renderSectionCardHtml(s, secIdx);
+          const cardEl = temp.firstElementChild;
+          cardsContainer.appendChild(cardEl);
+          enhanceSectionCard(cardEl);
+
+          const quickChips = document.getElementById('quicknav-chips');
+          if (quickChips) {
+            const chipBtn = document.createElement('button');
+            chipBtn.type = 'button';
+            chipBtn.className = 'quicknav-chip';
+            chipBtn.onclick = () => scrollToSection(secIdx);
+            chipBtn.title = `پرش به بخش ${secIdx}`;
+            chipBtn.innerHTML = `بخش ${secIdx}: ${escapeHtml((s.section_title || '').substring(0, 30))}`;
+            quickChips.appendChild(chipBtn);
+          }
+
+          addedCount++;
+          lastAddedTitle = s.section_title || '';
+          lastAddedIdx = secIdx;
+        }
+      });
+
+      if (addedCount > 0 && window.showToast) {
+        showToast(`📖 نوت بخش ${lastAddedIdx}: «${lastAddedTitle.substring(0, 30)}» آماده مطالعه شد!`, 'info');
+      }
+    }
+
+    // 3. Master Summary
+    const hadNoFinalSummary = !activeViewChapterData.final_summary;
+    if (hadNoFinalSummary && ch.final_summary) {
+      renderMasterSummaryPane(ch);
+      if (window.showToast) {
+        showToast('🏆 خلاصه جامع و سند مرجع کل فصل نیز با موفقیت تدوین شد!', 'success');
+      }
+    }
+
+    // 4. Update download links
+    const dlMd = document.getElementById('btn-download-chapter-md');
+    if (dlMd) dlMd.href = `/api/chapters/${ch.id}/export?format=md`;
+    const dlDocx = document.getElementById('btn-download-chapter-docx');
+    if (dlDocx) dlDocx.href = `/api/chapters/${ch.id}/export?format=docx`;
+
+    activeViewChapterData = ch;
+  }
+
+  async function openViewChapterModal(chapterId) {
+    try {
+      const res = await fetch(`/api/chapters/${chapterId}`);
+      if (!res.ok) throw new Error('خطا در دریافت اطلاعات نوت');
+      activeViewChapterData = await res.json();
+
+      document.getElementById('view-chapter-title-text').textContent = activeViewChapterData.chapter_title;
+      document.getElementById('view-chapter-pages-info').textContent = `— صفحات ${activeViewChapterData.start_page} الی ${activeViewChapterData.end_page}`;
+      document.getElementById('btn-download-chapter-md').href = `/api/chapters/${chapterId}/export?format=md`;
+      document.getElementById('btn-download-chapter-docx').href = `/api/chapters/${chapterId}/export?format=docx`;
+
+      updateModalLiveBanner(activeViewChapterData);
+      renderMasterSummaryPane(activeViewChapterData);
+      renderSectionsPane(activeViewChapterData);
+
+      const bodyEl = document.getElementById('view-chapter-body');
       if (window.applyReaderTheme && window.getSavedReaderTheme) {
         window.applyReaderTheme(window.getSavedReaderTheme());
       }
@@ -821,6 +1105,11 @@
       switchChapterViewTab('sections');
       document.getElementById('view-chapter-modal').style.display = 'flex';
       document.body.style.overflow = 'hidden';
+
+      const isProc = activeViewChapterData.status === 'PROCESSING' || activeViewChapterData.status === 'PENDING';
+      if (isProc && !chapterPollInterval) {
+        chapterPollInterval = setInterval(loadChapterSummaries, 2500);
+      }
     } catch (e) {
       if (window.showToast) showToast('خطا: ' + e.message, 'error');
     }
@@ -934,6 +1223,7 @@
       if (res.ok) {
         if (window.showToast) showToast('ادامه پردازش نوت فصل آغاز شد ▶️', 'info');
         loadChapterSummaries();
+        openViewChapterModal(chapterId);
       } else {
         const err = await res.json().catch(() => ({}));
         if (window.showToast) showToast(err.detail || 'خطا در ادامه پردازش.', 'error');
@@ -950,6 +1240,7 @@
       if (res.ok) {
         if (window.showToast) showToast('پردازش مجدد آغاز شد 🚀', 'info');
         loadChapterSummaries();
+        openViewChapterModal(chapterId);
       } else {
         const err = await res.json();
         if (window.showToast) showToast(err.detail || 'خطا در شروع مجدد.', 'error');

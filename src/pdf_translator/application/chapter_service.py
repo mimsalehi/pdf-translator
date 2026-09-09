@@ -707,8 +707,8 @@ class ChapterService:
     def export_chapter_summary(self, summary_id: str, format_type: str = "md") -> tuple[Path, str]:
         """Exports chapter summary as Markdown or DOCX file."""
         summary = self.chapter_summary_repo.get_by_id(summary_id)
-        if not summary or not summary.final_summary:
-            raise ValueError(f"Chapter summary {summary_id} not found or not completed")
+        if not summary or (not summary.final_summary and not summary.chunk_notes_json):
+            raise ValueError(f"Chapter summary {summary_id} not found or has no notes yet")
 
         project = self.project_repo.get_by_id(summary.project_id)
         safe_title = re.sub(r'[\\/*?:"<>| ]', '_', summary.chapter_title)[:40]
@@ -727,10 +727,13 @@ class ChapterService:
             doc.add_paragraph("=" * 40)
 
             # Final Master Summary
-            for par in summary.final_summary.split("\n\n"):
-                if par.strip():
-                    render_markdown_paragraph_to_docx(doc, par, project.storage_dir if project else None)
-
+            if summary.final_summary:
+                for par in summary.final_summary.split("\n\n"):
+                    if par.strip():
+                        render_markdown_paragraph_to_docx(doc, par, project.storage_dir if project else None)
+            else:
+                p_warn = doc.add_paragraph()
+                p_warn.add_run("⚠️ یادداشت: خلاصه جامع کل فصل هنوز تدوین نشده است (استخراج بخش‌ها در حال انجام است).").italic = True
             # Also append Section-by-Section notes if available
             if summary.chunk_notes_json:
                 try:
@@ -754,7 +757,8 @@ class ChapterService:
         else:
             filename = f"Chapter_{summary.start_page}_{summary.end_page}_{safe_title}.md"
             out_file = export_dir / filename
-            content = f"# {summary.chapter_title}\n\n**صفحات:** {summary.start_page} الی {summary.end_page}\n\n---\n\n{summary.final_summary}\n"
+            master_text = summary.final_summary or "*(خلاصه جامع کل فصل هنوز تدوین نشده است - استخراج بخش‌ها در حال انجام است)*"
+            content = f"# {summary.chapter_title}\n\n**صفحات:** {summary.start_page} الی {summary.end_page}\n\n---\n\n{master_text}\n"
             
             # Append Section-by-Section notes in markdown
             if summary.chunk_notes_json:

@@ -19,6 +19,16 @@ def get_engine():
         engine = create_engine(db_url, echo=False, connect_args=connect_args)
     return engine
 
+def reset_engine():
+    """Closes all active connections and resets engine instance."""
+    global engine
+    if engine is not None:
+        try:
+            engine.dispose()
+        except Exception:
+            pass
+        engine = None
+
 def init_db():
     """Create all tables and ensure default profile and prompt templates exist."""
     eng = get_engine()

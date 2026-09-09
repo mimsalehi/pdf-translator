@@ -613,3 +613,104 @@ async def test_chapter_processing_resets_thread_once_at_start(chapter_test_env):
     assert summary.status == "COMPLETED"
     # Must be called exactly once at chapter start (not 3+ times per section)
     assert len(reset_calls) == 1
+
+
+def test_export_chapter_summary_with_partial_sections_before_final_summary(chapter_test_env):
+    """Verifies that user can export MD and DOCX even when final_summary is not yet complete but sections are ready."""
+    service = chapter_test_env["service"]
+    proj = chapter_test_env["project"]
+
+    dto = ChapterSummaryCreateDTO(
+        chapter_title="Chapter In Progress",
+        start_page=1,
+        end_page=4,
+        source_type="source"
+    )
+    created = service.create_chapter_summary(proj.id, dto)
+
+    # Save intermediate chunk notes with NO final_summary
+    summary_obj = service.chapter_summary_repo.get_by_id(created.id)
+    summary_obj.status = "PROCESSING"
+    summary_obj.chunk_notes_json = json.dumps([
+        {
+            "section_index": 1,
+            "section_title": "مقدمه و معماری",
+            "start_page": 1,
+            "end_page": 2,
+            "word_count": 500,
+            "note": "این نوت بخش ۱ است که در حین پردازش استخراج شده است."
+        },
+        {
+            "section_index": 2,
+            "section_title": "الگوریتم اجماع",
+            "start_page": 3,
+            "end_page": 4,
+            "word_count": 600,
+            "note": "این نوت بخش ۲ است."
+        }
+    ], ensure_ascii=False)
+    service.chapter_summary_repo.save(summary_obj)
+
+    # Export MD - must succeed and include the section notes
+    md_path, md_mime = service.export_chapter_summary(created.id, "md")
+    assert md_path.exists()
+    assert md_mime == "text/markdown"
+    md_content = md_path.read_text(encoding="utf-8")
+    assert "مقدمه و معماری" in md_content
+    assert "الگوریتم اجماع" in md_content
+
+    # Export DOCX - must succeed
+    docx_path, docx_mime = service.export_chapter_summary(created.id, "docx")
+    assert docx_path.exists()
+    assert docx_path.stat().st_size > 500
+
+
+@pytest.mark.asyncio
+async def test_incremental_section_availability_during_processing(chapter_test_env):
+    """Verifies that chunk_notes_json is progressively updated after each section, enabling immediate reading."""
+    service = chapter_test_env["service"]
+    proj = chapter_test_env["project"]
+
+    observed_sections_count_during_run = []
+
+    original_save = service.chapter_summary_repo.save
+    def spy_save(summary_model):
+        if summary_model.chunk_notes_json:
+            try:
+                parsed = json.loads(summary_model.chunk_notes_json)
+                observed_sections_count_during_run.append(len(parsed))
+            except Exception:
+                pass
+        return original_save(summary_model)
+
+    service.chapter_summary_repo.save = spy_save
+
+    # Create pages with 3 clear sections
+    for p_num in range(1, 4):
+        p = service.page_repo.get_by_project_and_number(proj.id, p_num)
+        p.source_text = f"# Section {p_num}\n\n" + ("Deep technical content for architecture section. " * 200)
+        service.page_repo.save(p)
+
+    dto = ChapterSummaryCreateDTO(
+        chapter_title="Chapter Incremental Test",
+        start_page=1,
+        end_page=3,
+        source_type="source"
+    )
+    created = service.create_chapter_summary(proj.id, dto)
+
+    await service.process_chapter_summary(created.id, resume=False)
+
+    # Restore save
+    service.chapter_summary_repo.save = original_save
+
+    # Check that sections were saved incrementally: 1 section, then 2 sections, then 3 sections
+    assert 1 in observed_sections_count_during_run
+    assert 2 in observed_sections_count_during_run
+    assert 3 in observed_sections_count_during_run
+
+    # Final check
+    final_summary = service.get_chapter_summary(created.id)
+    assert final_summary.status == "COMPLETED"
+    chunks = json.loads(final_summary.chunk_notes_json)
+    assert len(chunks) == 3

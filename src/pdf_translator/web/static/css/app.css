@@ -710,6 +710,127 @@ h1, h2, h3, h4 {
   border-color: #c4d7be;
   color: #1c2e24;
 }
+
+/* Chapter Modal Live Processing Banner */
+.chapter-modal-live-banner {
+  background: var(--reader-surface-subtle, #1e1e22);
+  border-bottom: 1px solid var(--reader-border, #334155);
+  padding: 0.85rem 1.75rem;
+  direction: rtl;
+  transition: all 0.25s ease;
+}
+
+.reader-theme-paper .chapter-modal-live-banner,
+.reader-theme-light .chapter-modal-live-banner {
+  background: #f7f3eb;
+  border-bottom-color: #e5ded2;
+}
+
+.reader-theme-sepia .chapter-modal-live-banner {
+  background: #f2e7d5;
+  border-bottom-color: #e4d7c0;
+}
+
+.reader-theme-sage .chapter-modal-live-banner {
+  background: #eaf1e7;
+  border-bottom-color: #d2dfce;
+}
+
+.live-pulse-dot {
+  width: 9px;
+  height: 9px;
+  background-color: #06b6d4;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 rgba(6, 182, 212, 0.6);
+  animation: live-pulse-ring 1.8s infinite;
+  vertical-align: middle;
+}
+
+@keyframes live-pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 7px rgba(6, 182, 212, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(6, 182, 212, 0);
+  }
+}
+
+/* Quick Nav for Multi-Section Chapters */
+.chapter-sections-quicknav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+  padding: 0.65rem 1rem;
+  background: var(--reader-surface-subtle, #242429);
+  border: 1px solid var(--reader-border, #334155);
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+}
+
+.reader-theme-paper .chapter-sections-quicknav,
+.reader-theme-light .chapter-sections-quicknav {
+  background: #f2ede2;
+  border-color: #e5ded2;
+}
+
+.reader-theme-sepia .chapter-sections-quicknav {
+  background: #ebe0ce;
+  border-color: #e4d7c0;
+}
+
+.reader-theme-sage .chapter-sections-quicknav {
+  background: #dfebd8;
+  border-color: #d2dfce;
+}
+
+.quicknav-chip {
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--reader-surface, #1e1e22);
+  border: 1px solid var(--reader-border, #334155);
+  color: var(--reader-text, #f1f5f9);
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 0.78rem;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.quicknav-chip:hover {
+  border-color: var(--reader-accent, #3b82f6);
+  color: var(--reader-accent, #3b82f6);
+  transform: translateY(-1px);
+}
+
+.reader-theme-paper .quicknav-chip,
+.reader-theme-light .quicknav-chip {
+  background: #fcfbfa;
+  border-color: #d6ccbc;
+  color: #1e293b;
+}
+
+.reader-theme-sepia .quicknav-chip {
+  background: #faf4e7;
+  border-color: #d8c7a8;
+  color: #2d2215;
+}
+
+.reader-theme-sage .quicknav-chip {
+  background: #f3f7f0;
+  border-color: #c4d7be;
+  color: #1c2e24;
+}
 /* Stat Counters */
 .stats-row {
   display: flex;
