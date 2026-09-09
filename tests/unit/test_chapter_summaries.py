@@ -415,5 +415,201 @@ async def test_safe_insert_multiline_prompt_logic():
     multiline = "Line 1\nLine 2\n\nParagraph 2 with LaTeX"
     await bm._safe_insert_multiline_prompt(mock_page, multiline)
 
-    # Verify evaluate was called (execCommand insertText)
+    # Verify evaluate was called and native CDP keyboard.insert_text received the entire text
     assert mock_page.evaluate.call_count >= 1
+    mock_page.keyboard.insert_text.assert_awaited_with(multiline)
+
+@pytest.mark.asyncio
+async def test_submit_and_verify_prompt_presses_enter_when_button_disabled():
+    """Ensures Enter is actively pressed when Send button is disabled, fixing stuck submissions."""
+    from pdf_translator.adapters.providers.browser_manager import BrowserManager
+    from unittest.mock import AsyncMock, MagicMock
+
+    bm = BrowserManager.get_instance()
+    mock_page = MagicMock()
+
+    # Mock locator returns
+    mock_editor = MagicMock()
+    mock_editor.is_visible = AsyncMock(return_value=True)
+    mock_editor.focus = AsyncMock()
+
+    mock_send_btn = MagicMock()
+    mock_send_btn.is_visible = AsyncMock(return_value=True)
+    mock_send_btn.click = AsyncMock()
+
+    mock_stop_btn = MagicMock()
+    # Not visible on first check, visible on second check (generation started!)
+    mock_stop_btn.is_visible = AsyncMock(side_effect=[False, True])
+
+    def mock_locator(sel):
+        loc = MagicMock()
+        if "textarea" in sel or "contenteditable" in sel or "ProseMirror" in sel:
+            loc.first = mock_editor
+        elif "composer" in sel or "send" in sel or "Submit" in sel:
+            loc.first = mock_send_btn
+        elif "stop" in sel or "Stop" in sel or "توقف" in sel:
+            loc.first = mock_stop_btn
+        else:
+            loc.first = MagicMock()
+            loc.count = AsyncMock(return_value=0)
+        return loc
+
+    mock_page.locator = mock_locator
+    # evaluate returns False for button enabled check (disabled send button)
+    mock_page.evaluate = AsyncMock(return_value=False)
+    mock_page.keyboard.press = AsyncMock()
+
+    success = await bm._submit_and_verify_prompt(
+        page=mock_page,
+        provider_name="ChatGPT",
+        editor_selector="#prompt-textarea",
+        send_button_selector="button[data-testid='send-button']",
+        stop_button_selector="button[data-testid='stop-button']",
+        max_wait_seconds=3.0,
+    )
+
+    assert success is True
+    # Verify editor was focused and Enter was pressed
+    mock_editor.focus.assert_awaited()
+    mock_page.keyboard.press.assert_awaited_with("Enter")
+
+
+@pytest.mark.asyncio
+async def test_submit_and_verify_prompt_clicks_enabled_button():
+    """Ensures Send button is clicked directly when it is enabled and ready."""
+    from pdf_translator.adapters.providers.browser_manager import BrowserManager
+    from unittest.mock import AsyncMock, MagicMock
+
+    bm = BrowserManager.get_instance()
+    mock_page = MagicMock()
+
+    mock_editor = MagicMock()
+    mock_editor.is_visible = AsyncMock(return_value=True)
+
+    mock_send_btn = MagicMock()
+    mock_send_btn.is_visible = AsyncMock(return_value=True)
+    mock_send_btn.click = AsyncMock()
+
+    mock_stop_btn = MagicMock()
+    mock_stop_btn.is_visible = AsyncMock(side_effect=[False, True])
+
+    def mock_locator(sel):
+        loc = MagicMock()
+        if "textarea" in sel or "contenteditable" in sel:
+            loc.first = mock_editor
+        elif "composer" in sel or "send" in sel:
+            loc.first = mock_send_btn
+        elif "stop" in sel or "Stop" in sel:
+            loc.first = mock_stop_btn
+        else:
+            loc.first = MagicMock()
+            loc.count = AsyncMock(return_value=0)
+        return loc
+
+    mock_page.locator = mock_locator
+    # evaluate returns True for button enabled check
+    mock_page.evaluate = AsyncMock(return_value=True)
+
+    success = await bm._submit_and_verify_prompt(
+        page=mock_page,
+        provider_name="ChatGPT",
+        editor_selector="#prompt-textarea",
+        send_button_selector="button[data-testid='send-button']",
+        stop_button_selector="button[data-testid='stop-button']",
+        max_wait_seconds=3.0,
+    )
+
+    assert success is True
+    mock_send_btn.click.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_and_verify_prompt_fails_fast_when_unsubmitted():
+    """Ensures RuntimeError is raised within seconds rather than hanging for 6 minutes."""
+    from pdf_translator.adapters.providers.browser_manager import BrowserManager
+    from unittest.mock import AsyncMock, MagicMock
+
+    bm = BrowserManager.get_instance()
+    mock_page = MagicMock()
+
+    mock_editor = MagicMock()
+    mock_editor.is_visible = AsyncMock(return_value=True)
+    mock_editor.focus = AsyncMock()
+
+    mock_send_btn = MagicMock()
+    mock_send_btn.is_visible = AsyncMock(return_value=False)
+
+    mock_stop_btn = MagicMock()
+    mock_stop_btn.is_visible = AsyncMock(return_value=False)
+
+    def mock_locator(sel):
+        loc = MagicMock()
+        if "textarea" in sel:
+            loc.first = mock_editor
+        elif "send" in sel:
+            loc.first = mock_send_btn
+        elif "stop" in sel:
+            loc.first = mock_stop_btn
+        else:
+            loc.first = MagicMock()
+            loc.count = AsyncMock(return_value=0)
+        return loc
+
+    mock_page.locator = mock_locator
+    mock_page.evaluate = AsyncMock(return_value="some unsubmitted prompt text")
+    mock_page.keyboard.press = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="ارسال پیام به Gemini با کلید Enter یا دکمه ارسال انجام نشد"):
+        await bm._submit_and_verify_prompt(
+            page=mock_page,
+            provider_name="Gemini",
+            editor_selector="textarea",
+            send_button_selector="button.send",
+            stop_button_selector="button.stop",
+            max_wait_seconds=0.6,
+        )
+
+
+@pytest.mark.asyncio
+async def test_chapter_processing_resets_thread_once_at_start(chapter_test_env):
+    """Verifies reset_conversation_thread is called once at chapter start, NOT per chunk."""
+    service = chapter_test_env["service"]
+    proj = chapter_test_env["project"]
+
+    reset_calls = []
+
+    class MockManager:
+        def reset_conversation_thread(self, provider_key="all"):
+            reset_calls.append(provider_key)
+
+    class ProviderWithManager:
+        def __init__(self):
+            self.manager = MockManager()
+
+        async def translate(self, source_text, source_language, target_language, system_prompt="", **kwargs):
+            if "سند نوت‌برداری" in source_text or "ترکیب کن" in source_text:
+                return "# خلاصه نهایی"
+            return "# نوت بخش\n\n- تحلیل عمیق مهندسی"
+
+    service._resolve_provider = lambda profile: ProviderWithManager()
+
+    # Create pages so split_chapter_into_heading_sections yields at least 3 sections
+    for p_num in range(1, 7):
+        p = service.page_repo.get_by_project_and_number(proj.id, p_num)
+        p.source_text = f"# Section {p_num}\n\n" + ("Detailed technical description with architecture notes. " * 300)
+        service.page_repo.save(p)
+
+    dto = ChapterSummaryCreateDTO(
+        chapter_title="Chapter Multi-Section Thread Test",
+        start_page=1,
+        end_page=6,
+        source_type="source"
+    )
+    created = service.create_chapter_summary(proj.id, dto)
+
+    await service.process_chapter_summary(created.id, resume=False)
+
+    summary = service.get_chapter_summary(created.id)
+    assert summary.status == "COMPLETED"
+    # Must be called exactly once at chapter start (not 3+ times per section)
+    assert len(reset_calls) == 1

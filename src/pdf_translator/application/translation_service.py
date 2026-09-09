@@ -17,7 +17,8 @@ from pdf_translator.domain.ports import (
     TranslationProviderPort,
 )
 from pdf_translator.adapters.providers.mock_provider import MockTranslationProvider
-from pdf_translator.adapters.providers.openai_provider import OpenAIProvider
+from pdf_translator.application.persian_cleanup import clean_markdown_persian, to_persian_digits
+
 from pdf_translator.adapters.providers.gemini_provider import GeminiProvider
 from pdf_translator.adapters.providers.claude_provider import ClaudeProvider
 from pdf_translator.adapters.providers.browser_provider import BrowserTranslationProvider
@@ -111,23 +112,28 @@ def unmask_image_blocks(translated_text: str, image_blocks: list, original_sourc
     persian_to_eng = {"۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4", "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9"}
 
     for idx, original_block in enumerate(image_blocks):
-        # 1. Direct match
+        persian_idx = "".join(list(persian_to_eng.keys())[list(persian_to_eng.values()).index(d)] for d in str(idx))
+        idx_pattern = f"(?:{idx}|{persian_idx})"
+        one_based_pattern = f"(?:{idx + 1}|{to_persian_digits(str(idx + 1))})"
+
+        # 1. Direct token match
         token_standard = f"[[IMAGE_BLOCK_{idx}]]"
         if token_standard in result:
             result = result.replace(token_standard, original_block)
             continue
 
-        # 2. Match regex variations
-        persian_idx = "".join(list(persian_to_eng.keys())[list(persian_to_eng.values()).index(d)] for d in str(idx))
-        idx_pattern = f"(?:{idx}|{persian_idx})"
-
+        # 2. Match regex variations (tokens, AI Persian translations, or literal 'Figure/Diagram' text)
         patterns = [
             rf"`*\[\s*\[\s*[\u200e\u200f\u200c]*IMAGE[\s\\_]+BLOCK[\s\\_]+{idx_pattern}[\u200e\u200f\u200c]*\s*\]\s*\]`*",
             rf"`*\[\s*[\u200e\u200f\u200c]*IMAGE[\s\\_]+BLOCK[\s\\_]+{idx_pattern}[\u200e\u200f\u200c]*\s*\]`*",
             rf"`*\[\s*\[\s*(?:تصویر|تصویر_بلوک|عکس)[\s\\_]+{idx_pattern}\s*\]\s*\]`*",
             rf"\bIMAGE[\s\\_]+BLOCK[\s\\_]+{idx_pattern}\b",
+            # Matches AI literal outputs like ![Figure/Diagram], [Figure/Diagram], ![Figure/Diagram]() or ![تصویر ۱]
+            rf"!*\[\s*(?:Figure[\s\/_-]*Diagram|Image|تصویر|نمودار)\s*(?:{idx_pattern}|{one_based_pattern})?\s*\](?:\([^\)]*\))?",
+            rf"(?m)^\s*(?:Figure[\s\/_-]*Diagram|تصویر[\s\/]+نمودار)\s*$",
         ]
-
+        if len(image_blocks) == 1:
+            patterns.append(r"\bFigure[\s\/_-]*Diagram\b")
         replaced = False
         for pat in patterns:
             if re.search(pat, result, flags=re.IGNORECASE):
@@ -137,16 +143,14 @@ def unmask_image_blocks(translated_text: str, image_blocks: list, original_sourc
 
         # 3. Fallback: If AI dropped the placeholder token completely, restore based on context
         if not replaced:
-            # Check if source text started with this image block (common case: image at top of page)
-            if original_source_text and original_source_text.strip().startswith(original_block):
+            if original_source_text and original_source_text.strip().startswith(image_blocks[idx]):
                 result = original_block + "\n\n" + result.lstrip()
                 replaced = True
-            # Or check if there is a figure caption (e.g. ### شکل or ### Figure) to place it right before
             elif re.search(r'(#{1,4}\s*(?:شکل|تصویر|نمودار|Figure|Diagram)\s*\d+)', result, re.IGNORECASE):
                 result = re.sub(r'(#{1,4}\s*(?:شکل|تصویر|نمودار|Figure|Diagram)\s*\d+)', f"{original_block}\n\n\\1", result, count=1, flags=re.IGNORECASE)
                 replaced = True
             elif len(image_blocks) == 1:
-                if original_source_text and original_source_text.find(original_block) < len(original_source_text) / 2:
+                if original_source_text and original_source_text.find(image_blocks[idx]) < len(original_source_text) / 2:
                     result = original_block + "\n\n" + result.lstrip()
                 else:
                     result = result.rstrip() + "\n\n" + original_block
@@ -154,7 +158,6 @@ def unmask_image_blocks(translated_text: str, image_blocks: list, original_sourc
     # Clean any leftover or unreplaced placeholder tokens from text
     result = re.sub(r"`*\[\s*\[\s*[\u200e\u200f\u200c]*IMAGE[\s\\_]+BLOCK[\s\\_]+[0-9۰-۹]+[\u200e\u200f\u200c]*\s*\]\s*\]`*\n*", "", result, flags=re.IGNORECASE)
     return result.strip()
-
 def is_pure_code_or_media_page(text: str) -> bool:
     """
     Returns True if the page contains ONLY code blocks, image tags, horizontal rules,
@@ -324,6 +327,8 @@ class TranslationService:
             # 2. Restore 100% untouched original code blocks and image blocks
             translated_result = unmask_code_blocks(raw_translated_result, code_blocks)
             translated_result = unmask_image_blocks(translated_result, image_blocks, page.source_text)
+            if project.target_language.lower() in {"persian", "farsi", "فارسی"}:
+                translated_result = clean_markdown_persian(translated_result)
         except Exception as e:
             page.status = PageStatus.FAILED
             page.updated_at = datetime.utcnow()

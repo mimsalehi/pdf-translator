@@ -616,9 +616,41 @@
   });
 
   function toggleReadingMode() {
-    openReadingModal();
-  }
+    isReadingMode = !isReadingMode;
+    const transInput = document.getElementById('translated-text-input');
+    const readerContainer = document.getElementById('reading-mode-container');
+    const toggleBtn = document.getElementById('toggle-reader-btn');
 
+    if (isReadingMode) {
+      transInput.style.display = 'none';
+      readerContainer.style.display = 'block';
+      const rawText = transInput.value.trim();
+      if (rawText && window.marked) {
+        readerContainer.innerHTML = marked.parse(rawText);
+        if (window.renderMathInElement) {
+          try {
+            renderMathInElement(readerContainer, {
+              delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false},
+                {left: '\\(', right: '\\)', display: false},
+                {left: '\\[', right: '\\]', display: true}
+              ],
+              throwOnError: false
+            });
+          } catch (e) {}
+        }
+        if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(readerContainer);
+      } else {
+        readerContainer.innerHTML = '<div style="color: var(--color-text-muted); text-align: center; padding: 2rem;">متنی برای نمایش وجود ندارد.</div>';
+      }
+      if (toggleBtn) toggleBtn.innerHTML = '✏️ Edit Markdown';
+    } else {
+      transInput.style.display = 'block';
+      readerContainer.style.display = 'none';
+      if (toggleBtn) toggleBtn.innerHTML = '📖 Reading Mode';
+    }
+  }
   async function startNewAIChat() {
     try {
       const res = await fetch('/api/browser/new-chat', { method: 'POST' });

@@ -17,8 +17,8 @@ from pdf_translator.domain.entities import (
 from pdf_translator.domain.enums import ProviderType
 from pdf_translator.domain.errors import (
     ProjectNotFoundError,
-    TranslationProviderError,
 )
+from pdf_translator.application.persian_cleanup import clean_markdown_persian
 from pdf_translator.domain.ports import (
     ChapterSummaryRepositoryPort,
     ChapterPromptTemplateRepositoryPort,
@@ -528,6 +528,9 @@ class ChapterService:
                                 existing_notes_map[str(item["section_index"])] = item
                 except Exception:
                     existing_notes_map = {}
+            # Reset conversation thread once at chapter start so the entire chapter starts with a clean slate
+            if hasattr(provider, "manager"):
+                provider.manager.reset_conversation_thread("all")
 
             chunk_notes = []
             for idx, sec in enumerate(sections):
@@ -541,10 +544,6 @@ class ChapterService:
                 summary.progress_percent = pct
                 summary.progress_message = f"در حال استخراج نوت بخش {idx + 1} از {total_sections}: «{sec['section_title'][:40]}...» (صفحات {sec['start_page']} تا {sec['end_page']})..."
                 self.chapter_summary_repo.save(summary)
-
-                # Reset conversation thread so each chunk runs in a clean, isolated chat (no context bloat or stuck threads)
-                if hasattr(provider, "manager"):
-                    provider.manager.reset_conversation_thread("all")
 
                 # Build complete, self-contained prompt for every section (same robust pattern as page translation)
                 sec_title = sec["section_title"]
@@ -600,6 +599,8 @@ class ChapterService:
                             )
                             if retry_res and not is_canned_acknowledgement(retry_res):
                                 note = retry_res
+                        if note:
+                            note = clean_markdown_persian(note)
                         break
                     except Exception as err:
                         if attempt == 0:
@@ -680,6 +681,9 @@ class ChapterService:
                         target_language="Persian",
                         system_prompt="",
                     )
+
+            if final_summary:
+                final_summary = clean_markdown_persian(final_summary)
 
             # 6. Complete
             summary.final_summary = final_summary.strip()

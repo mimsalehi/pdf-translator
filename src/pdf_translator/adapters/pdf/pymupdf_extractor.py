@@ -251,18 +251,25 @@ def extract_semantic_markdown_from_page(
                 images_dir.mkdir(parents=True, exist_ok=True)
                 img_file = images_dir / f"page_{page_number}_img_{valid_img_idx}.png"
                 if not img_file.exists():
-                    try:
-                        if xref > 0:
+                    saved = False
+                    if xref > 0:
+                        try:
                             pix = fitz.Pixmap(doc, xref)
-                            if pix.colorspace != fitz.csRGB:
+                            if pix.colorspace and pix.colorspace != fitz.csRGB:
                                 pix = fitz.Pixmap(fitz.csRGB, pix)
                             pix.save(str(img_file))
-                        else:
+                            saved = True
+                        except Exception:
+                            saved = False
+                    if not saved:
+                        try:
                             rect = fitz.Rect(bbox)
-                            pix = page.get_pixmap(clip=rect, dpi=150)
-                            pix.save(str(img_file))
-                    except Exception:
-                        pass
+                            if not rect.is_empty and not rect.is_infinite:
+                                pix = page.get_pixmap(clip=rect, dpi=150)
+                                pix.save(str(img_file))
+                                saved = True
+                        except Exception:
+                            pass
 
             proj_part = f"/api/projects/{project_id}" if project_id else "/api/projects/default"
             img_url = f"{proj_part}/pages/{page_number}/images/{valid_img_idx}"

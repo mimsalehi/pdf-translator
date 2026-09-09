@@ -209,6 +209,12 @@ def test_mask_and_unmask_image_blocks():
     unmasked_3 = unmask_image_blocks(ai_out_persian, img_blocks, src)
     assert unmasked_3.startswith("![Figure/Diagram](/api/projects/bc771201/pages/32/images/1)")
 
+    # 4. AI literally outputs 'Figure/Diagram' instead of the token
+    ai_out_literal = "### شکل ۱-۱. طرح کلی\n\nFigure/Diagram\n\nدر برخی موارد..."
+    unmasked_4 = unmask_image_blocks(ai_out_literal, img_blocks, src)
+    assert "![Figure/Diagram](/api/projects/bc771201/pages/32/images/1)" in unmasked_4
+    assert "Figure/Diagram\n\n" not in unmasked_4
+
 def test_gemini_html_multi_panel_extraction():
     from bs4 import BeautifulSoup
     from pdf_translator.adapters.providers.browser_manager import convert_chat_html_to_markdown
