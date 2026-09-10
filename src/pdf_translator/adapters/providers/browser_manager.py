@@ -150,101 +150,63 @@ class BrowserManager:
 
     async def _safe_insert_multiline_prompt(self, page: PlaywrightPage, prompt: str):
         """
-        Fast, atomic, and complete multiline prompt insertion.
-        Uses native CDP Input.insertText which handles multiline texts, code,
-        and LaTeX instantly without character truncation or clipboard restrictions.
+        Fast and atomic multiline prompt insertion into ProseMirror/rich-text editors.
+        Inserts instantly via document.execCommand('insertText') without Enter submits.
         """
         clean_text = (prompt or "").replace("\r\n", "\n").replace("\r", "\n").strip()
         if not clean_text:
             return
 
-        # Specifically target the contenteditable DIV and avoid hidden fallback textarea
-        editor_loc = page.locator(
-            'div#prompt-textarea.ProseMirror, div#prompt-textarea[contenteditable="true"], rich-textarea div[contenteditable="true"], div.ql-editor, div.ProseMirror, div[contenteditable="true"][role="textbox"], textarea:not([style*="display: none"])'
-        ).first
+        # 1. Primary Method: Fast atomic document.execCommand('insertText') on contenteditable DIV/textarea
+        inserted = False
+        try:
+            inserted = await page.evaluate("""(text) => {
+                const el = document.querySelector('div#prompt-textarea[contenteditable="true"]')
+                        || document.querySelector('#prompt-textarea')
+                        || document.querySelector('rich-textarea div[contenteditable="true"]')
+                        || document.querySelector('div.ql-editor')
+                        || document.querySelector('div.ProseMirror')
+                        || document.querySelector('div[contenteditable="true"]')
+                        || document.querySelector('textarea')
+                        || document.activeElement;
+                if (!el) return false;
+                el.focus();
+                document.execCommand('selectAll', false, null);
+                document.execCommand('delete', false, null);
+                const ok = document.execCommand('insertText', false, text);
+                try {
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch(e) {}
+                const curLen = (el.innerText || el.textContent || el.value || '').trim().length;
+                return ok && curLen >= Math.min(text.length * 0.8, 20);
+            }""", clean_text)
+        except Exception:
+            inserted = False
 
+        if inserted:
+            return
+
+        # 2. If initial execCommand did not insert, ensure editor click and retry
+        editor_loc = page.locator('#prompt-textarea, rich-textarea div[contenteditable="true"], div.ql-editor, div.ProseMirror, div[contenteditable="true"], textarea').first
         try:
             if await editor_loc.is_visible(timeout=800):
                 await editor_loc.click(force=True, timeout=1200)
         except Exception:
             pass
 
-        # Insert text using synthetic DataTransfer paste + CDP keyboard insertion
-        inserted = False
         try:
             inserted = await page.evaluate("""(text) => {
-                // Dismiss any floating scroll-to-bottom button
-                const scrollBtn = document.querySelector('button[aria-label*="Scroll to bottom" i]')
-                               || document.querySelector('button[class*="scroll-to-bottom"]');
-                if (scrollBtn) {
-                    try { scrollBtn.click(); } catch(e) {}
-                }
-
-                const el = document.querySelector('div#prompt-textarea.ProseMirror')
-                        || document.querySelector('div#prompt-textarea')
-                        || document.querySelector('rich-textarea div[contenteditable="true"]')
-                        || document.querySelector('div.ql-editor')
-                        || document.querySelector('div.ProseMirror')
-                        || document.querySelector('div[contenteditable="true"][role="textbox"]')
-                        || document.querySelector('form textarea')
-                        || document.querySelector('textarea:not([style*="display: none"])');
+                const el = document.activeElement || document.querySelector('#prompt-textarea');
                 if (!el) return false;
-
-                el.scrollIntoView({ behavior: 'instant', block: 'end' });
-
-                if (document.activeElement && document.activeElement !== el) {
-                    try { document.activeElement.blur(); } catch(e) {}
-                }
-
-                const p = el.querySelector('p') || el;
-                p.focus();
-
-                // Set selection Range
-                const sel = window.getSelection();
-                const range = document.createRange();
-                range.selectNodeContents(p);
-                range.collapse(false);
-                sel.removeAllRanges();
-                sel.addRange(range);
-
-                // Synthetic DataTransfer paste event (ProseMirror's native input pipeline)
-                try {
-                    const dt = new DataTransfer();
-                    dt.setData('text/plain', text);
-                    const pasteEvt = new ClipboardEvent('paste', {
-                        clipboardData: dt,
-                        bubbles: true,
-                        cancelable: true
-                    });
-                    p.dispatchEvent(pasteEvt);
-                } catch(e) {}
-
-                // Also try execCommand
-                try {
-                    document.execCommand('insertText', false, text);
-                } catch(e) {}
-
-                // Dispatch standard input events
-                try {
-                    p.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
-                    p.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, inputType: 'insertText', data: text }));
-                    el.dispatchEvent(new Event('input', { bubbles: true }));
-                    el.dispatchEvent(new Event('change', { bubbles: true }));
-                } catch(e) {}
-
-                const curLen = (el.innerText || el.textContent || el.value || '').trim().length;
-                return curLen >= text.trim().length * 0.5;
+                return document.execCommand('insertText', false, text);
             }""", clean_text)
         except Exception:
             inserted = False
 
-        # Also run native CDP keyboard insertion
-        try:
+        # 3. Fallback: direct atomic text insertion via CDP
+        if not inserted:
             await page.keyboard.insert_text(clean_text)
-        except Exception:
-            pass
-
-        await asyncio.sleep(0.05)
     async def _submit_and_verify_prompt(
         self,
         page: PlaywrightPage,
@@ -315,10 +277,10 @@ class BrowserManager:
         start_time = asyncio.get_event_loop().time()
         retried = False
         while (asyncio.get_event_loop().time() - start_time) < max_wait_seconds:
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.08)
 
             try:
-                if await stop_btn.is_visible(timeout=50):
+                if await stop_btn.is_visible(timeout=30):
                     return True
             except Exception:
                 pass
@@ -341,18 +303,17 @@ class BrowserManager:
             except Exception:
                 pass
 
-            # If 1.8s passed with zero response, attempt ONE single fallback retry
-            if not retried and (asyncio.get_event_loop().time() - start_time) > 1.8:
+            # If 0.8s passed with zero response, attempt ONE single fallback retry
+            if not retried and (asyncio.get_event_loop().time() - start_time) > 0.8:
                 retried = True
                 try:
-                    if await send_btn.is_visible(timeout=200):
-                        await send_btn.click(timeout=500)
-                    else:
+                    if await send_btn.is_visible(timeout=100):
+                        await send_btn.click(timeout=300)
+                    if await editor.is_visible(timeout=100):
+                        await editor.focus()
                         await page.keyboard.press("Enter")
                 except Exception:
                     pass
-
-        # Final check after loop
         try:
             if await stop_btn.is_visible(timeout=100):
                 return True
@@ -495,7 +456,7 @@ class BrowserManager:
                         target_page = await context.new_page()
                         setattr(target_page, "_pdf_session_tag", session_tag)
                         await target_page.goto(default_url, wait_until="domcontentloaded", timeout=20000)
-                        should_new_chat = True
+                        should_new_chat = False
 
                 # 3. Handle fresh new chat thread in this tab
                 if should_new_chat:
@@ -592,105 +553,116 @@ class BrowserManager:
         # Press Escape to dismiss any stray popovers, tooltips, or open menus
         try:
             await page.keyboard.press("Escape")
-            await asyncio.sleep(0.05)
         except Exception:
             pass
-
-        # Locate and focus visible editor
-        editor = page.locator("div#prompt-textarea.ProseMirror, div#prompt-textarea, [data-testid='textbox'], div[contenteditable='true']").first
+        # Locate and focus visible editor (wait up to 20s if tab is hydrating)
+        editor = page.locator("div#prompt-textarea, div.ProseMirror, div[contenteditable='true']").first
+        await editor.wait_for(state="visible", timeout=20000)
         try:
-            if await editor.is_visible(timeout=800):
-                await editor.click(force=True, timeout=1000)
+            await editor.click(force=True, timeout=1500)
         except Exception:
             pass
 
-        # Record baseline count of ONLY assistant turns BEFORE sending
-        assistant_locator = page.locator('div[data-message-author-role="assistant"]')
-        baseline_count = await assistant_locator.count()
+        # 1. Clear input completely
+        try:
+            await page.keyboard.press("ControlOrMeta+A")
+            await page.keyboard.press("Backspace")
+        except Exception:
+            pass
 
-        # Insert prompt safely & atomically directly into ProseMirror
+        # Record baseline identity of the last assistant turn BEFORE sending
+        baseline_info = await page.evaluate("""() => {
+            const assts = document.querySelectorAll('div[data-message-author-role="assistant"]');
+            if (assts.length === 0) return { lastId: null };
+            const last = assts[assts.length - 1];
+            return {
+                lastId: last.getAttribute('data-message-id') || (last.textContent || '').trim().substring(0, 50)
+            };
+        }""")
+
+        # 2. Paste prompt
         await self._safe_insert_multiline_prompt(page, prompt)
 
+        # 3. Press Enter (ChatGPT sends automatically!)
+        await page.keyboard.press("Enter")
 
-        # Send with active verification (Enter + Send button)
-        await self._submit_and_verify_prompt(
-            page=page,
-            provider_name="ChatGPT",
-            editor_selector='#prompt-textarea, div.ProseMirror, div[contenteditable="true"]',
-            send_button_selector='button#composer-submit-button, button[data-testid="send-button"], button[aria-label*="Send" i]',
-            stop_button_selector='button[data-testid="stop-button"], button[aria-label*="Stop" i], button[aria-label*="توقف" i]',
-            user_turn_selector='div[data-message-author-role="user"]',
-            max_wait_seconds=6.0,
-        )
+        # Fast backup check: if editor still has text, click send button or press Enter again
+        await asyncio.sleep(0.08)
+        try:
+            ed_has_text = await page.evaluate("""() => {
+                const el = document.querySelector('div#prompt-textarea');
+                return el && (el.innerText || el.textContent || '').trim().length > 0;
+            }""")
+            if ed_has_text:
+                btn = page.locator('form button[data-testid="send-button"], form button#composer-submit-button, button[aria-label*="Send" i]:not([aria-label="Start Voice"])').first
+                if await btn.is_visible(timeout=300):
+                    await btn.click(force=True, timeout=500)
+                else:
+                    await page.keyboard.press("Enter")
+        except Exception:
+            pass
 
-        # 1. Wait for generation to start and stream to completion
+        # 4. Wait for response to finish
         start_time = asyncio.get_event_loop().time()
         stop_btn = page.locator('button[data-testid="stop-button"], button[aria-label*="Stop" i], button[aria-label*="توقف" i]').first
-        copy_btn_sel = 'button[data-testid="copy-turn-action-button"], button[aria-label*="Copy" i], button[aria-label*="کپی" i]'
-
         prev_len = 0
-        stable_seconds = 0.0
+        stable_count = 0
+        extracted_html = None
 
         while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
-            await asyncio.sleep(0.3)
-            current_count = await assistant_locator.count()
-            if current_count <= baseline_count:
+            await asyncio.sleep(0.15)
+            is_stopping = False
+            try:
+                is_stopping = await stop_btn.is_visible()
+            except Exception:
+                is_stopping = False
+
+            check = await page.evaluate("""(base) => {
+                const assts = document.querySelectorAll('div[data-message-author-role="assistant"]');
+                if (assts.length === 0) return null;
+                const last = assts[assts.length - 1];
+                const curId = last.getAttribute('data-message-id') || (last.textContent || '').trim().substring(0, 50);
+
+                if (base.lastId && curId === base.lastId) {
+                    return null;
+                }
+
+                const mdBox = last.querySelector('.markdown, div.prose, div[class*="markdown"]') || last;
+                return {
+                    text: (mdBox.textContent || '').trim(),
+                    html: mdBox.innerHTML
+                };
+            }""", baseline_info)
+
+            if not check:
                 continue
 
-            latest_turn = assistant_locator.nth(current_count - 1)
+            cur_text = check["text"]
 
-            is_generating = False
-            try:
-                is_generating = await stop_btn.is_visible(timeout=50)
-            except Exception:
-                is_generating = False
-
-            cur_text = ""
-            try:
-                cur_text = (await latest_turn.inner_text()).strip()
-            except Exception:
-                cur_text = ""
-
-            # While stop button is visible, generation is actively in progress
-            if is_generating:
-                prev_len = len(cur_text)
-                stable_seconds = 0.0
-                continue
-
-            # Stop button is no longer visible
-            # Priority 1: Check if copy button has appeared on the latest turn
-            try:
-                if await latest_turn.locator(copy_btn_sel).first.is_visible(timeout=50) and len(cur_text) > 0:
-                    break
-            except Exception:
-                pass
-
-            # Priority 2: Text stability check (must be stable for at least 1.5s)
-            if len(cur_text) > 0:
+            if not is_stopping and len(cur_text) > 0:
                 if len(cur_text) == prev_len:
-                    stable_seconds += 0.3
-                    if stable_seconds >= 1.5:
-                        break
+                    stable_count += 1
                 else:
                     prev_len = len(cur_text)
-                    stable_seconds = 0.0
+                    stable_count = 0
 
-        # 2. Extract STRICTLY from .markdown or div.prose inside the latest assistant turn
-        current_count = await assistant_locator.count()
-        if current_count <= baseline_count:
+                if stable_count >= 1:
+                    extracted_html = check["html"]
+                    break
+
+        if not extracted_html:
+            extracted_html = await page.evaluate("""() => {
+                const assts = document.querySelectorAll('div[data-message-author-role="assistant"]');
+                if (assts.length === 0) return null;
+                const last = assts[assts.length - 1];
+                const mdBox = last.querySelector('.markdown, div.prose, div[class*="markdown"]') || last;
+                return mdBox.innerHTML || last.innerHTML;
+            }""")
+
+        if not extracted_html:
             raise RuntimeError("پاسخ جدیدی از هوش مصنوعی دریافت نشد. لطفاً تب کروم را بررسی نمایید.")
 
-        latest_turn = assistant_locator.nth(current_count - 1)
-        try:
-            md_box = latest_turn.locator('.markdown, div.prose, div[class*="markdown"]').first
-            if await md_box.is_visible(timeout=1000):
-                html = await md_box.inner_html()
-            else:
-                html = await latest_turn.inner_html()
-        except Exception:
-            html = await latest_turn.inner_html()
-        return convert_chat_html_to_markdown(html)
-
+        return convert_chat_html_to_markdown(extracted_html)
     async def translate_with_gemini(self, prompt: str, timeout_seconds: int = 360, session_tag: str = "default") -> str:
         """Automates translation silently in the background Google Gemini tab."""
         async with self._get_lock(session_tag):
@@ -726,29 +698,20 @@ class BrowserManager:
 
         streaming_query = "button[aria-label*='Stop' i], button[aria-label*='توقف' i], button.stop-button"
 
-        # Send with active verification (Enter + Send button)
-        await self._submit_and_verify_prompt(
-            page=page,
-            provider_name="Gemini",
-            editor_selector="rich-textarea div[contenteditable='true'], textarea, div.ql-editor, [contenteditable='true'][role='textbox']",
-            send_button_selector="button[aria-label='Send message'], button[aria-label*='Send' i], button.send-button, button[aria-label='Submit'], button[aria-label*='ارسال' i]",
-            stop_button_selector=streaming_query,
-            user_turn_selector="user-query, div.user-query, [class*='user-query']",
-            max_wait_seconds=8.0,
-        )
+        send_btn = page.locator(
+            "button[aria-label='Send message'], button[aria-label*='Send' i], button.send-button, button[aria-label='Submit'], button[aria-label*='ارسال' i]"
+        ).first
+        if await send_btn.is_visible(timeout=500):
+            await send_btn.click(force=True, timeout=1000)
+        else:
+            await page.keyboard.press("Enter")
 
         start_time = asyncio.get_event_loop().time()
         prev_len = 0
-        stable_seconds = 0.0
+        stable_count = 0
 
         while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
-            await asyncio.sleep(0.3)
-            turns_count = await turns_locator.count()
-            if turns_count <= baseline_turns_count:
-                continue
-
-            latest_turn = turns_locator.nth(turns_count - 1)
-
+            await asyncio.sleep(0.2)
             is_streaming_ui = False
             try:
                 stop_locator = page.locator(streaming_query).first
@@ -757,34 +720,26 @@ class BrowserManager:
             except Exception:
                 pass
 
-            if is_streaming_ui:
-                prev_len = 0
-                stable_seconds = 0.0
+            turns_count = await turns_locator.count()
+            if turns_count <= baseline_turns_count:
                 continue
 
+            latest_turn = turns_locator.nth(turns_count - 1)
             cur_text = ""
             try:
                 cur_text = (await latest_turn.inner_text()).strip()
             except Exception:
-                cur_text = ""
+                pass
 
-            if len(cur_text) > 0:
-                # Check if copy button / response footer appeared
-                try:
-                    footer = latest_turn.locator(".model-response-footer, button[aria-label*='Copy' i], button[aria-label*='کپی' i]").first
-                    if await footer.is_visible(timeout=50) and len(cur_text) == prev_len:
-                        break
-                except Exception:
-                    pass
-
+            if not is_streaming_ui and len(cur_text) > 0:
                 if len(cur_text) == prev_len:
-                    stable_seconds += 0.3
-                    if stable_seconds >= 1.5:
-                        break
+                    stable_count += 1
                 else:
                     prev_len = len(cur_text)
-                    stable_seconds = 0.0
-        # Extract complete response HTML from the latest model response turn
+                    stable_count = 0
+
+                if stable_count >= 1:
+                    break
         turns_count = await turns_locator.count()
         if turns_count <= baseline_turns_count:
             raise RuntimeError("پاسخ جدیدی از Gemini دریافت نشد. لطفاً تب کروم را بررسی نمایید.")
@@ -870,69 +825,62 @@ class BrowserManager:
 
         stop_query = "button[aria-label*='Stop' i], button[aria-label*='توقف' i]"
 
-        # Send with active verification (Enter + Send button)
-        await self._submit_and_verify_prompt(
-            page=page,
-            provider_name="Claude",
-            editor_selector="div[contenteditable='true'], textarea, div.ProseMirror",
-            send_button_selector="button[aria-label*='Send' i], button[aria-label*='ارسال' i]",
-            stop_button_selector=stop_query,
-            user_turn_selector="div[data-is-streaming='true'], [data-test-render-count]",
-            max_wait_seconds=8.0,
-        )
+        send_btn = page.locator("button[aria-label='Send Message'], button[aria-label='Send message'], button[aria-label*='Send' i]").first
+        if await send_btn.is_visible(timeout=500):
+            await send_btn.click(force=True, timeout=1000)
+        else:
+            await page.keyboard.press("Enter")
 
         start_time = asyncio.get_event_loop().time()
-        stop_btn = page.locator(stop_query).first
-        prev_len = 0
-        stable_seconds = 0.0
+        stop_btn = page.locator("button[aria-label='Stop generating'], button[aria-label='Stop responding'], button[aria-label*='Stop' i]").first
 
-        # Real-time completion for Claude
+        prev_len = 0
+        stable_count = 0
         while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.2)
+            is_stopping = False
+            try:
+                is_stopping = await stop_btn.is_visible()
+            except Exception:
+                is_stopping = False
+
+            if not is_stopping:
+                finished = False
+                try:
+                    finished = await page.evaluate("""() => {
+                        const latest = document.querySelector("div[data-is-streaming='false']")
+                                    || document.querySelector("button[aria-label*='Copy']");
+                        return !!latest;
+                    }""")
+                except Exception:
+                    finished = False
+
+                if finished:
+                    break
+
             count = await responses.count()
             if count <= baseline_count:
                 continue
 
             latest_res = responses.nth(count - 1)
-
-            is_stopping = False
-            try:
-                is_stopping = await stop_btn.is_visible(timeout=50)
-            except Exception:
-                is_stopping = False
-
-            if is_stopping:
-                prev_len = 0
-                stable_seconds = 0.0
-                continue
-
-            # Check if latest message is finished (specifically on latest_res, not document)
-            try:
-                is_finished = await latest_res.evaluate("""(el) => {
-                    if (el.getAttribute('data-is-streaming') === 'false') return true;
-                    const copyBtn = el.querySelector("button[aria-label*='Copy']");
-                    return !!copyBtn;
-                }""")
-                if is_finished:
-                    break
-            except Exception:
-                pass
-
             cur_text = ""
             try:
                 cur_text = (await latest_res.inner_text()).strip()
             except Exception:
-                cur_text = ""
+                pass
 
-            if len(cur_text) > 0:
+            if not is_stopping and len(cur_text) > 0:
                 if len(cur_text) == prev_len:
-                    stable_seconds += 0.3
-                    if stable_seconds >= 1.5:
-                        break
+                    stable_count += 1
                 else:
                     prev_len = len(cur_text)
-                    stable_seconds = 0.0
-        if count <= baseline_count:
+                    stable_count = 0
+
+                if stable_count >= 1:
+                    break
+
+        count = await responses.count()
+        if count == 0:
             raise RuntimeError("No response found from Claude. Please check the open browser window.")
 
         latest_res = responses.nth(count - 1)

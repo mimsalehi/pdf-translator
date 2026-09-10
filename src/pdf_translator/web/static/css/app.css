@@ -552,7 +552,7 @@ h1, h2, h3, h4 {
   border: 1px solid var(--reader-border, #334155);
   border-radius: var(--radius-lg);
   margin-bottom: 1.25rem;
-  overflow: hidden;
+  overflow: visible;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   transition: all 0.2s ease;
 }
@@ -563,7 +563,10 @@ h1, h2, h3, h4 {
 }
 
 .chapter-section-header {
-  padding: 0.9rem 1.35rem;
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  padding: 0.8rem 1.35rem;
   background: var(--reader-surface-subtle, #242429);
   display: flex;
   justify-content: space-between;
@@ -571,7 +574,14 @@ h1, h2, h3, h4 {
   cursor: pointer;
   user-select: none;
   border-bottom: 1px solid var(--reader-border, #334155);
-  transition: background 0.2s ease;
+  border-top-left-radius: calc(var(--radius-lg) - 1px);
+  border-top-right-radius: calc(var(--radius-lg) - 1px);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chapter-section-note-card.is-collapsed .chapter-section-header {
+  border-radius: calc(var(--radius-lg) - 1px);
+  border-bottom: none;
 }
 
 .chapter-section-header:hover {
@@ -590,6 +600,8 @@ h1, h2, h3, h4 {
   color: var(--reader-text, #f8fafc);
   background: var(--reader-surface, #1e1e22);
   font-size: inherit;
+  border-bottom-left-radius: calc(var(--radius-lg) - 1px);
+  border-bottom-right-radius: calc(var(--radius-lg) - 1px);
 }
 
 /* Theme Specific Overrides for Chapter Section Cards */
@@ -655,62 +667,177 @@ h1, h2, h3, h4 {
   color: #1c2e24;
 }
 
-/* Chapter Modal Sub-Navigation Bar */
-.chapter-modal-subnav {
-  background: var(--reader-surface-subtle, #1e1e22);
-  border-bottom: 1px solid var(--reader-border, #334155);
-  padding: 0.6rem 1.75rem;
+/* Chapter Modal Top Bar & Sub-Navigation */
+.chapter-reader-header {
   display: flex;
-  gap: 0.6rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: nowrap;
+  position: relative;
+}
+
+.chapter-topbar-start {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.chapter-topbar-title-box {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tools Dropdown Menu */
+.chapter-tools-dropdown-wrapper {
+  position: relative;
+}
+
+.chapter-tools-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 120;
+  background: var(--reader-surface, #1e1e22);
+  border: 1px solid var(--reader-border, #334155);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.45);
+  padding: 0.85rem;
+  min-width: 270px;
   direction: rtl;
-  flex-wrap: wrap;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tools-menu-section {
+  border-bottom: 1px solid var(--reader-border, rgba(255, 255, 255, 0.08));
+  padding-bottom: 0.65rem;
+}
+
+.tools-menu-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--reader-text-muted);
+  margin-bottom: 0.35rem;
+  display: block;
+}
+
+/* Slim Progress Track on the bottom edge of topbar */
+.topbar-live-progress-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: rgba(56, 189, 248, 0.15);
+  overflow: hidden;
+}
+
+.topbar-live-progress-fill {
+  height: 100%;
+  background: #38bdf8;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.chapter-modal-subnav {
+  background: var(--reader-surface, rgba(0, 0, 0, 0.25));
+  border: 1px solid var(--reader-border, #334155);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  direction: rtl;
   transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.chapter-modal-subnav .btn {
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.65rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  transition: all 0.2s ease;
+  white-space: nowrap;
 }
 
 .chapter-modal-subnav .btn-primary {
   background: var(--reader-accent, var(--color-primary));
   border-color: var(--reader-accent, var(--color-primary));
   color: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .chapter-modal-subnav .btn-secondary {
-  background: var(--reader-surface, rgba(30, 41, 59, 0.7));
-  border-color: var(--reader-border, rgba(148, 163, 184, 0.3));
+  background: transparent;
+  border-color: transparent;
+  color: var(--reader-text-muted, #94a3b8);
+}
+
+.chapter-modal-subnav .btn-secondary:hover {
+  background: var(--reader-surface-subtle);
   color: var(--reader-text, #f1f5f9);
 }
 
 .reader-theme-paper .chapter-modal-subnav,
 .reader-theme-light .chapter-modal-subnav {
   background: #f2ede2;
-  border-bottom-color: #e5ded2;
+  border-color: #e5ded2;
 }
 .reader-theme-paper .chapter-modal-subnav .btn-secondary,
 .reader-theme-light .chapter-modal-subnav .btn-secondary {
+  background: transparent;
+  border-color: transparent;
+  color: #64748b;
+}
+.reader-theme-paper .chapter-modal-subnav .btn-secondary:hover,
+.reader-theme-light .chapter-modal-subnav .btn-secondary:hover {
   background: #fcfbfa;
-  border-color: #d6ccbc;
   color: #1e293b;
 }
 
 .reader-theme-sepia .chapter-modal-subnav {
   background: #ebe0ce;
-  border-bottom-color: #e4d7c0;
+  border-color: #e4d7c0;
 }
 .reader-theme-sepia .chapter-modal-subnav .btn-secondary {
+  background: transparent;
+  border-color: transparent;
+  color: #78716c;
+}
+.reader-theme-sepia .chapter-modal-subnav .btn-secondary:hover {
   background: #faf4e7;
-  border-color: #d8c7a8;
   color: #2d2215;
 }
 
 .reader-theme-sage .chapter-modal-subnav {
   background: #dfebd8;
-  border-bottom-color: #d2dfce;
+  border-color: #d2dfce;
 }
 .reader-theme-sage .chapter-modal-subnav .btn-secondary {
+  background: transparent;
+  border-color: transparent;
+  color: #52796f;
+}
+.reader-theme-sage .chapter-modal-subnav .btn-secondary:hover {
   background: #f3f7f0;
-  border-color: #c4d7be;
   color: #1c2e24;
 }
 
+.chapter-topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
 /* Chapter Modal Live Processing Banner */
 .chapter-modal-live-banner {
   background: var(--reader-surface-subtle, #1e1e22);
@@ -1381,6 +1508,217 @@ h1, h2, h3, h4 {
   color: var(--reader-text);
   background-color: var(--reader-surface);
   transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Chapter Reader Fullscreen / Focus Mode */
+.reader-modal-overlay.is-fullscreen {
+  padding: 0 !important;
+  margin: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  align-items: stretch !important;
+  justify-content: stretch !important;
+  overflow: hidden !important;
+  background: var(--reader-bg, #0f172a);
+}
+
+.reader-modal-dialog.is-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  border: none !important;
+  margin: 0 !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+/* Thin Single-Line Top Bar in Fullscreen Chapter Reading Mode */
+.reader-modal-dialog.is-fullscreen .reader-modal-header {
+  padding: 0 1.25rem !important;
+  height: 44px !important;
+  min-height: 44px !important;
+  max-height: 44px !important;
+  flex-shrink: 0 !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 40 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex-wrap: nowrap !important;
+  gap: 0.65rem !important;
+  overflow: visible !important;
+  background: var(--reader-surface-subtle) !important;
+  border-bottom: 1px solid var(--reader-border) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-topbar-start {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.reader-modal-dialog.is-fullscreen #view-chapter-title-text {
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.92rem;
+}
+
+.reader-modal-dialog.is-fullscreen #view-chapter-pages-info {
+  white-space: nowrap;
+  font-size: 0.75rem;
+  color: var(--reader-text-muted);
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-modal-subnav {
+  flex-shrink: 0;
+  margin: 0 0.35rem;
+  padding: 2px !important;
+  border: 1px solid var(--reader-border) !important;
+  border-radius: var(--radius-md) !important;
+  background: var(--reader-surface, rgba(0, 0, 0, 0.25)) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-modal-subnav .btn {
+  padding: 0.2rem 0.6rem !important;
+  font-size: 0.78rem !important;
+  white-space: nowrap !important;
+  height: 26px !important;
+  line-height: 1 !important;
+  border-radius: var(--radius-sm) !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.3rem !important;
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-topbar-end {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-topbar-end .btn {
+  height: 28px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.78rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+/* Completely hide bulky processing banner in fullscreen to maximize reading space */
+.reader-modal-dialog.is-fullscreen .chapter-modal-live-banner {
+  display: none !important;
+}
+
+/* Maximized Reading Area in Fullscreen */
+.reader-modal-dialog.is-fullscreen .reader-modal-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.85rem 0 3.5rem 0 !important;
+}
+
+.reader-modal-dialog.is-fullscreen .reader-modal-content > div {
+  max-width: 1050px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* Hide redundant in-content banner in fullscreen to maximize reading space */
+.reader-modal-dialog.is-fullscreen .chapter-master-summary-banner {
+  display: none !important;
+}
+
+/* Compact quicknav in fullscreen */
+.reader-modal-dialog.is-fullscreen .chapter-sections-quicknav {
+  margin-bottom: 1.25rem;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.82rem;
+}
+
+/* Sticky compact section header bar in fullscreen mode */
+.reader-modal-dialog.is-fullscreen .chapter-section-note-card {
+  overflow: visible;
+  margin-bottom: 1.5rem;
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  padding: 0.5rem 1.15rem;
+  min-height: 42px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  border-top-left-radius: calc(var(--radius-lg) - 1px);
+  border-top-right-radius: calc(var(--radius-lg) - 1px);
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-section-note-card.is-collapsed .chapter-section-header {
+  border-radius: calc(var(--radius-lg) - 1px);
+  border-bottom: none;
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-section-header strong {
+  font-size: 0.95rem;
+}
+
+.reader-modal-dialog.is-fullscreen .chapter-section-header .btn {
+  height: 26px;
+  font-size: 0.76rem;
+  padding: 0.15rem 0.55rem;
+}
+
+.reader-theme-paper .reader-modal-dialog.is-fullscreen .chapter-section-header,
+.reader-theme-light .reader-modal-dialog.is-fullscreen .chapter-section-header,
+.reader-theme-sepia .reader-modal-dialog.is-fullscreen .chapter-section-header,
+.reader-theme-sage .reader-modal-dialog.is-fullscreen .chapter-section-header {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+}
+
+/* Responsive adjustments for screens in fullscreen */
+@media (max-width: 900px) {
+  .reader-modal-dialog.is-fullscreen #view-chapter-pages-info {
+    display: none;
+  }
+  .reader-modal-dialog.is-fullscreen #view-chapter-title-text {
+    max-width: 140px;
+  }
+}
+
+/* Responsive adjustments for mid-sized and small screens in fullscreen */
+@media (max-width: 1250px) {
+  .reader-modal-dialog.is-fullscreen .theme-chip span:not(.theme-dot) {
+    display: none;
+  }
+  .reader-modal-dialog.is-fullscreen .theme-chip {
+    padding: 3px 6px;
+  }
+}
+
+@media (max-width: 1050px) {
+  .reader-modal-dialog.is-fullscreen #view-chapter-pages-info {
+    display: none;
+  }
+  .reader-modal-dialog.is-fullscreen #view-chapter-title-text {
+    max-width: 160px;
+  }
 }
 
 /* Custom Smooth Scrollbars for Reader */

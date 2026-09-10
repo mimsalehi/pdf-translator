@@ -12,7 +12,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 
-from pdf_translator.application.persian_cleanup import clean_markdown_persian, to_persian_digits
+from pdf_translator.application.persian_cleanup import clean_markdown_persian, to_persian_digits, normalize_markdown_emphasis
 from pdf_translator.domain.entities import Page, Project
 
 DEFAULT_FONT = "Vazirmatn"
@@ -130,6 +130,17 @@ def fa_run(
     return run
 
 
+def render_formatted_markdown_runs(p, text: str, size: float = 11.0, color: RGBColor | None = None, italic: bool = False):
+    """Renders inline bold (**...**) formatting as authentic Word runs with Persian script support."""
+    norm_text = normalize_markdown_emphasis(text)
+    norm_text = norm_text.replace("`", "")
+
+    parts = re.split(r"\*\*(.*?)\*\*", norm_text)
+    for i, part in enumerate(parts):
+        if not part:
+            continue
+        is_bold = (i % 2 == 1)
+        fa_run(p, part, size=size, bold=is_bold, italic=italic, color=color)
 def render_markdown_paragraph_to_docx(doc: Document, par_text: str, storage_dir: str | None = None):
     """Parses a markdown paragraph or image block and adds it with proper Persian RTL formatting to docx."""
     text = par_text.strip()
@@ -207,7 +218,7 @@ def render_markdown_paragraph_to_docx(doc: Document, par_text: str, storage_dir:
         p.paragraph_format.space_after = Pt(4)
         p.paragraph_format.left_indent = Inches(0.25)
         fa_run(p, "•  ", bold=True)
-        fa_run(p, item_text)
+        render_formatted_markdown_runs(p, item_text)
         return
 
     # Numbered List: avoid 'List Number' because numbering.xml renders Latin digits on visual left
@@ -225,7 +236,7 @@ def render_markdown_paragraph_to_docx(doc: Document, par_text: str, storage_dir:
         p.paragraph_format.left_indent = Inches(0.25)
         fa_prefix = f"{to_persian_digits(num_val)}.  "
         fa_run(p, fa_prefix, bold=True)
-        fa_run(p, item_text)
+        render_formatted_markdown_runs(p, item_text)
         return
 
     # Blockquote
@@ -243,8 +254,7 @@ def render_markdown_paragraph_to_docx(doc: Document, par_text: str, storage_dir:
     rtl_paragraph(p, align="both")
     p.paragraph_format.line_spacing = 1.4
     p.paragraph_format.space_after = Pt(8)
-    clean_text = text.replace("**", "").replace("`", "")
-    fa_run(p, clean_text)
+    render_formatted_markdown_runs(p, text)
 
 
 class DocxExporter:

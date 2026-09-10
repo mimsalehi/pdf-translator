@@ -430,7 +430,27 @@ window.renderMarkdownWithKatex = function(text) {
     mathInlines.push(math);
     return `MATHINLINETOKEN${idx}XYZ`;
   });
+  // 3.5 Sanitize Markdown bold/italic delimiters with trailing or leading whitespace
+  // e.g. "**Star Schema **- " -> "**Star Schema** - "
+  clean = clean.replace(/\*\*([^\*\n]+?)\*\*/g, (match, inner) => {
+    if (!inner.trim()) return match;
+    const leading = inner.startsWith(' ') ? ' ' : '';
+    const trailing = inner.endsWith(' ') ? ' ' : '';
+    return `${leading}**${inner.trim()}**${trailing}`;
+  });
 
+  clean = clean.replace(/(?:^|[^\w])__([^_\n]+?)__(?=[^\w]|$)/g, (match, inner) => {
+    if (!inner.trim()) return match;
+    const leading = inner.startsWith(' ') ? ' ' : '';
+    const trailing = inner.endsWith(' ') ? ' ' : '';
+    return `${leading}__${inner.trim()}__${trailing}`;
+  });
+
+  clean = clean.replace(/\*\*[ \t]+/g, '** ');
+  clean = clean.replace(/[ \t]+\*\*/g, ' **');
+
+  clean = clean.replace(/\*\*([^\*\n]+?)\*\*([–—-])(?=\s|[\u0600-\u06FF])/g, '**$1** $2');
+  clean = clean.replace(/\*\*([^\*\n]+?)\*\*\s+([–—-])(?=[\u0600-\u06FF])/g, '**$1** $2 ');
   // 4. Parse Markdown with marked
   let html = window.marked ? marked.parse(clean) : clean;
 

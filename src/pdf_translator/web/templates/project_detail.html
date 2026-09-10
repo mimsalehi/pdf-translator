@@ -194,58 +194,100 @@
 <!-- Modal 2: View / Read Chapter Summary -->
 <div id="view-chapter-modal" class="reader-modal-overlay" style="display: none;">
   <div class="reader-modal-dialog" id="view-chapter-dialog">
-    <div class="reader-modal-header" style="direction: rtl;">
-      <div style="display: flex; align-items: center; gap: 0.75rem;">
-        <span style="font-size: 1.25rem;">📚</span>
-        <div>
-          <strong id="view-chapter-title-text" style="font-size: 1.05rem;">عنوان فصل</strong>
-          <span id="view-chapter-pages-info" style="font-size: 0.8rem; color: var(--color-text-dim); margin-right: 0.5rem;">— صفحات ۱ الی ۱۵</span>
+    <div class="reader-modal-header chapter-reader-header" id="chapter-reader-header" style="direction: rtl;">
+      <!-- Right: Chapter Title & Info & Compact Live Status -->
+      <div class="chapter-topbar-start">
+        <span style="font-size: 1.15rem; flex-shrink: 0;">📚</span>
+        <div class="chapter-topbar-title-box">
+          <strong id="view-chapter-title-text" style="font-size: 0.95rem;">عنوان فصل</strong>
+          <span id="view-chapter-pages-info" style="font-size: 0.76rem; color: var(--color-text-dim); margin-right: 0.35rem;">— صفحات ۱ الی ۱۵</span>
         </div>
+        <!-- Compact live progress badge in topbar -->
+        <span id="topbar-live-status-badge" class="badge" style="display: none; font-size: 0.74rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 0.15rem 0.45rem; border-radius: 9999px; white-space: nowrap; align-items: center; gap: 0.3rem;">
+          <span class="live-pulse-dot" style="width: 6px; height: 6px; display: inline-block;"></span>
+          <span id="topbar-live-pct">۰٪</span>
+        </span>
       </div>
-      <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-        <!-- Theme Selector Picker -->
-        <div class="reader-theme-picker" id="chapter-reader-theme-picker">
-          <button type="button" class="theme-chip theme-chip-dark active" data-theme="dark" onclick="setReaderTheme('dark')" title="حالت شب گرم (Warm Velvet Night)">
-            <span class="theme-dot" style="background: #1e1e22; border: 1px solid #d4a359;"></span>
-            <span>شب گرم</span>
-          </button>
-          <button type="button" class="theme-chip theme-chip-paper" data-theme="paper" onclick="setReaderTheme('paper')" title="حالت کاغذ کتاب (Warm Cream Paper)">
-            <span class="theme-dot" style="background: #fdfbf7; border: 1px solid #c4b89b;"></span>
-            <span>کاغذ کتاب</span>
-          </button>
-          <button type="button" class="theme-chip theme-chip-sepia" data-theme="sepia" onclick="setReaderTheme('sepia')" title="حالت سپیا (Vintage Parchment)">
-            <span class="theme-dot" style="background: #faf4e7; border: 1px solid #b45309;"></span>
-            <span>سپیا</span>
-          </button>
-          <button type="button" class="theme-chip theme-chip-sage" data-theme="sage" onclick="setReaderTheme('sage')" title="حالت آرامش چشم (Calm Sage Green)">
-            <span class="theme-dot" style="background: #f3f7f0; border: 1px solid #2e6b4d;"></span>
-            <span>آرامش</span>
-          </button>
-        </div>
-        <div style="display: flex; gap: 0.2rem;">
-          <button class="btn btn-secondary btn-sm" onclick="adjustChapterNoteFontSize(-0.1)" title="کوچک‌نمایی قلم (A-)">A-</button>
-          <button class="btn btn-secondary btn-sm" onclick="adjustChapterNoteFontSize(0.1)" title="بزرگ‌نمایی قلم (A+)">A+</button>
-        </div>
-        <button type="button" class="btn btn-primary btn-sm" onclick="toggleChapterAssistant()" title="دستیار مطالعه هوشمند نوت فصل">
-          ✨ دستیار مطالعه
+
+      <!-- Center: Sub-Tabs: Compact Segmented Pills -->
+      <div class="chapter-modal-subnav" id="chapter-modal-subnav">
+        <span class="btn btn-sm btn-primary chapter-subnav-btn" id="btn-chapter-view-sections" style="cursor: default;">
+          📑 نوت‌های بخش‌به‌بخش (<span id="chapter-view-sections-count">۰</span>)
+        </span>
+      </div>
+
+      <!-- Left: Actions & Reading Tools Dropdown -->
+      <div class="chapter-topbar-end">
+        <button type="button" class="btn btn-primary btn-sm" onclick="toggleChapterAssistant()" title="دستیار هوشمند فصل" style="height: 30px; font-size: 0.8rem; padding: 0.2rem 0.6rem; display: inline-flex; align-items: center; gap: 0.3rem;">
+          ✨ دستیار
         </button>
-        <a id="btn-download-chapter-md" href="#" class="btn btn-secondary btn-sm" title="دانلود Markdown">
-          📥 MD
-        </a>
-        <a id="btn-download-chapter-docx" href="#" class="btn btn-secondary btn-sm" title="دانلود Word (DOCX)">
-          📥 Word
-        </a>
-        <button class="btn btn-secondary btn-sm" onclick="closeViewChapterModal()" title="بستن (Esc)" style="font-size: 1.1rem; line-height: 1;">✕</button>
+
+        <!-- Dropdown Menu for Extra Tools: Themes, Font Size, Downloads -->
+        <div class="chapter-tools-dropdown-wrapper" style="position: relative;">
+          <button type="button" class="btn btn-secondary btn-sm" id="btn-chapter-tools-dropdown" onclick="toggleChapterToolsDropdown(event)" title="تنظیمات تم، اندازه قلم و دانلود" style="height: 30px; font-size: 0.8rem; padding: 0.2rem 0.55rem; display: inline-flex; align-items: center; gap: 0.3rem;">
+            ⚙️ ابزارها ▾
+          </button>
+          <div id="chapter-tools-dropdown-menu" class="chapter-tools-dropdown-menu" style="display: none;">
+            <!-- Themes -->
+            <div class="tools-menu-section">
+              <span class="tools-menu-label">🎨 تم مطالعه:</span>
+              <div class="reader-theme-picker" id="chapter-reader-theme-picker">
+                <button type="button" class="theme-chip theme-chip-dark active" data-theme="dark" onclick="setReaderTheme('dark')" title="حالت شب گرم">
+                  <span class="theme-dot" style="background: #1e1e22; border: 1px solid #d4a359;"></span>
+                  <span>شب گرم</span>
+                </button>
+                <button type="button" class="theme-chip theme-chip-paper" data-theme="paper" onclick="setReaderTheme('paper')" title="حالت کاغذ کتاب">
+                  <span class="theme-dot" style="background: #fdfbf7; border: 1px solid #c4b89b;"></span>
+                  <span>کاغذ کتاب</span>
+                </button>
+                <button type="button" class="theme-chip theme-chip-sepia" data-theme="sepia" onclick="setReaderTheme('sepia')" title="حالت سپیا">
+                  <span class="theme-dot" style="background: #faf4e7; border: 1px solid #b45309;"></span>
+                  <span>سپیا</span>
+                </button>
+                <button type="button" class="theme-chip theme-chip-sage" data-theme="sage" onclick="setReaderTheme('sage')" title="حالت آرامش">
+                  <span class="theme-dot" style="background: #f3f7f0; border: 1px solid #2e6b4d;"></span>
+                  <span>آرامش</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Font Size -->
+            <div class="tools-menu-section" style="display: flex; justify-content: space-between; align-items: center;">
+              <span class="tools-menu-label" style="margin-bottom: 0;">🔍 اندازه متن:</span>
+              <div style="display: flex; gap: 0.35rem;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="adjustChapterNoteFontSize(-0.1)" title="کوچک‌نمایی قلم (A-)" style="padding: 0.2rem 0.65rem;">A-</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="adjustChapterNoteFontSize(0.1)" title="بزرگ‌نمایی قلم (A+)" style="padding: 0.2rem 0.65rem;">A+</button>
+              </div>
+            </div>
+
+            <!-- Downloads -->
+            <div class="tools-menu-section" style="border-bottom: none; padding-bottom: 0;">
+              <span class="tools-menu-label">📥 دانلود فصل:</span>
+              <div style="display: flex; gap: 0.4rem; margin-top: 0.35rem;">
+                <a id="btn-download-chapter-md" href="#" class="btn btn-secondary btn-sm" style="flex: 1; text-align: center; text-decoration: none;" title="دانلود Markdown">
+                  Markdown
+                </a>
+                <a id="btn-download-chapter-docx" href="#" class="btn btn-secondary btn-sm" style="flex: 1; text-align: center; text-decoration: none;" title="دانلود Word (DOCX)">
+                  Word (DOCX)
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fullscreen Button -->
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-chapter-fullscreen" onclick="toggleChapterFullscreen()" title="حالت تمام‌صفحه و تمرکز (Focus Mode)" style="height: 30px; font-size: 0.8rem; padding: 0.2rem 0.6rem; display: inline-flex; align-items: center; gap: 0.25rem;">
+          ⛶ تمام‌صفحه
+        </button>
+
+        <!-- Close Button -->
+        <button class="btn btn-secondary btn-sm" onclick="closeViewChapterModal()" title="بستن (Esc)" style="font-size: 1.1rem; line-height: 1; width: 30px; height: 30px; padding: 0; display: inline-flex; align-items: center; justify-content: center;">✕</button>
       </div>
-    </div>
-    <!-- Sub-Tabs: Section-by-Section Notes vs Master Summary -->
-    <div class="chapter-modal-subnav" id="chapter-modal-subnav">
-      <button type="button" class="btn btn-sm btn-primary" id="btn-chapter-view-sections" onclick="switchChapterViewTab('sections')">
-        📑 ۱. خلاصه‌ها و یادداشت‌های بخش‌به‌بخش (<span id="chapter-view-sections-count">۰</span> بخش)
-      </button>
-      <button type="button" class="btn btn-sm btn-secondary" id="btn-chapter-view-master" onclick="switchChapterViewTab('master')">
-        <span id="btn-chapter-master-label">🏆 ۲. خلاصه جامع و سند مرجع کل فصل</span>
-      </button>
+
+      <!-- Slim 2px Progress line at the bottom edge of the topbar -->
+      <div id="topbar-live-progress-track" class="topbar-live-progress-track" style="display: none;">
+        <div id="topbar-live-progress-fill" class="topbar-live-progress-fill" style="width: 0%;"></div>
+      </div>
     </div>
     <!-- Live Processing Status Banner Inside Modal -->
     <div id="chapter-modal-live-banner" class="chapter-modal-live-banner" style="display: none;">
@@ -268,18 +310,15 @@
       <div id="view-chapter-sections-pane" style="display: block;">
         <!-- Rendered Collapsible Heading Sections -->
       </div>
-      <div id="view-chapter-master-pane" style="display: none;">
-        <!-- Rendered Master Summary Markdown Content -->
-      </div>
     </div>
   </div>
 </div>
 
 <!-- Modal 3: Edit Chapter Note -->
 <div id="edit-chapter-modal" class="reader-modal-overlay" style="display: none;">
-  <div class="reader-modal-dialog" style="max-width: 850px; max-height: 90vh;">
+  <div class="reader-modal-dialog" style="max-width: 520px;">
     <div class="reader-modal-header" style="direction: rtl;">
-      <strong style="font-size: 1.05rem;">✏️ ویرایش نوت فصل</strong>
+      <strong style="font-size: 1.05rem;">✏️ ویرایش عنوان فصل</strong>
       <button class="btn btn-secondary btn-sm" onclick="closeEditChapterModal()" style="font-size: 1.1rem; line-height: 1;">✕</button>
     </div>
     <div class="reader-modal-content" style="direction: rtl; padding: 1.5rem;">
@@ -288,10 +327,6 @@
         <div class="form-group">
           <label class="form-label" for="edit-chapter-title">عنوان فصل</label>
           <input type="text" id="edit-chapter-title" class="form-control" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="edit-chapter-text">متن مارک‌داون نوت</label>
-          <textarea id="edit-chapter-text" rows="18" class="form-control" style="font-family: 'Vazirmatn', -apple-system, sans-serif; font-size: 0.95rem; line-height: 1.7; resize: vertical; background: #0b1120; color: #f1f5f9; direction: rtl;"></textarea>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1rem;">
           <button type="button" class="btn btn-secondary" onclick="closeEditChapterModal()">انصراف</button>
@@ -380,7 +415,7 @@
     <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; background: #1e293b; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); margin-bottom: 0.5rem;">
       <span style="font-size: 0.8rem; color: #94a3b8; white-space: nowrap;">محدوده پاسخ‌دهی:</span>
       <select id="ch-qa-scope-select" class="form-control" onchange="onChapterQAScopeChange()" style="font-size: 0.82rem; padding: 0.25rem 0.5rem; height: auto; background: #0f172a; color: #f1f5f9; border-color: var(--color-border);">
-        <option value="0">🏆 کل فصل (خلاصه جامع و سنتز نهایی)</option>
+        <option value="0">📚 کل فصل (تمام بخش‌ها)</option>
       </select>
     </div>
 
@@ -554,7 +589,15 @@
           `;
         } else if (ch.status === 'COMPLETED') {
           statusBadge = `<span class="badge badge-approved">✅ آماده مطالعه</span>`;
-          const previewText = (ch.final_summary || '').substring(0, 150) + '...';
+          let previewText = '';
+          if (ch.chunk_notes_json) {
+            try {
+              const parsedNotes = JSON.parse(ch.chunk_notes_json);
+              if (parsedNotes.length > 0 && parsedNotes[0].note) {
+                previewText = parsedNotes[0].note.substring(0, 150) + '...';
+              }
+            } catch(e) {}
+          }
           bodyContent = `
             <div style="font-size: 0.85rem; color: var(--color-text-dim); line-height: 1.6; max-height: 70px; overflow: hidden;">
               ${previewText}
@@ -589,7 +632,7 @@
         const sourceBadge = ch.source_type === 'translation' ? 'منبع: ترجمه فارسی' : 'منبع: متن اصلی (English)';
         let sectionsBadge = '';
         if (parsed.length > 0) {
-          sectionsBadge = `<span class="chapter-source-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">📑 ${parsed.length} بخش سرفصل + خلاصه جامع</span>`;
+          sectionsBadge = `<span class="chapter-source-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3);">📑 ${parsed.length} بخش سرفصل</span>`;
         }
 
         return `
@@ -816,6 +859,7 @@
       if (body && body.style.display === 'none') {
         body.style.display = 'block';
         if (arrow) arrow.textContent = '▼';
+        el.classList.remove('is-collapsed');
       }
     }
   }
@@ -871,29 +915,56 @@
 
   function updateModalLiveBanner(data) {
     const banner = document.getElementById('chapter-modal-live-banner');
-    if (!banner) return;
+    const topbarTrack = document.getElementById('topbar-live-progress-track');
+    const topbarFill = document.getElementById('topbar-live-progress-fill');
+    const topbarBadge = document.getElementById('topbar-live-status-badge');
+    const topbarPct = document.getElementById('topbar-live-pct');
+
     const isProcessing = data.status === 'PROCESSING' || data.status === 'PENDING';
     const isFailed = data.status === 'FAILED';
 
     if (isProcessing) {
-      banner.style.display = 'block';
-      document.getElementById('modal-banner-status').textContent = 'در حال استخراج و خلاصه‌سازی زنده...';
-      document.getElementById('modal-banner-status').style.color = '#38bdf8';
-      document.getElementById('modal-banner-pct').textContent = `${data.progress_percent}%`;
-      document.getElementById('modal-banner-progress-fill').style.width = `${Math.max(5, data.progress_percent)}%`;
-      document.getElementById('modal-banner-msg').textContent = data.progress_message || 'در حال تحلیل و استخراج بخش‌ها...';
+      if (banner) {
+        banner.style.display = 'block';
+        document.getElementById('modal-banner-status').textContent = 'در حال استخراج و خلاصه‌سازی زنده...';
+        document.getElementById('modal-banner-status').style.color = '#38bdf8';
+        document.getElementById('modal-banner-pct').textContent = `${data.progress_percent}%`;
+        document.getElementById('modal-banner-progress-fill').style.width = `${Math.max(5, data.progress_percent)}%`;
+        document.getElementById('modal-banner-msg').textContent = data.progress_message || 'در حال تحلیل و استخراج بخش‌ها...';
+      }
+      if (topbarTrack) topbarTrack.style.display = 'block';
+      if (topbarFill) {
+        topbarFill.style.width = `${Math.max(5, data.progress_percent)}%`;
+        topbarFill.style.background = '#38bdf8';
+      }
+      if (topbarBadge) topbarBadge.style.display = 'inline-flex';
+      if (topbarPct) topbarPct.textContent = `${data.progress_percent}%`;
     } else if (isFailed) {
-      banner.style.display = 'block';
-      document.getElementById('modal-banner-status').textContent = 'پردازش متوقف شد';
-      document.getElementById('modal-banner-status').style.color = '#f87171';
-      document.getElementById('modal-banner-pct').textContent = `${data.progress_percent}%`;
-      document.getElementById('modal-banner-progress-fill').style.width = `${data.progress_percent}%`;
-      document.getElementById('modal-banner-msg').innerHTML = `
-        ${escapeHtml(data.progress_message || data.error_message || 'خطا در پردازش')}
-        <button class="btn btn-sm btn-primary" onclick="resumeChapter('${data.id}')" style="margin-right: 0.5rem; padding: 0.15rem 0.5rem; font-size: 0.76rem;">▶️ ادامه پردازش</button>
-      `;
+      if (banner) {
+        banner.style.display = 'block';
+        document.getElementById('modal-banner-status').textContent = 'پردازش متوقف شد';
+        document.getElementById('modal-banner-status').style.color = '#f87171';
+        document.getElementById('modal-banner-pct').textContent = `${data.progress_percent}%`;
+        document.getElementById('modal-banner-progress-fill').style.width = `${data.progress_percent}%`;
+        document.getElementById('modal-banner-msg').innerHTML = `
+          ${escapeHtml(data.progress_message || data.error_message || 'خطا در پردازش')}
+          <button class="btn btn-sm btn-primary" onclick="resumeChapter('${data.id}')" style="margin-right: 0.5rem; padding: 0.15rem 0.5rem; font-size: 0.76rem;">▶️ ادامه پردازش</button>
+        `;
+      }
+      if (topbarTrack) topbarTrack.style.display = 'block';
+      if (topbarFill) {
+        topbarFill.style.width = `${data.progress_percent}%`;
+        topbarFill.style.background = '#f87171';
+      }
+      if (topbarBadge) {
+        topbarBadge.style.display = 'inline-flex';
+        topbarBadge.style.color = '#f87171';
+      }
+      if (topbarPct) topbarPct.textContent = 'خطا';
     } else {
-      banner.style.display = 'none';
+      if (banner) banner.style.display = 'none';
+      if (topbarTrack) topbarTrack.style.display = 'none';
+      if (topbarBadge) topbarBadge.style.display = 'none';
     }
   }
 
@@ -901,48 +972,10 @@
     const scopeSelect = document.getElementById('ch-qa-scope-select');
     if (!scopeSelect) return;
     const currentVal = scopeSelect.value;
-    scopeSelect.innerHTML = '<option value="0">🏆 کل فصل (خلاصه جامع و سنتز نهایی)</option>' +
+    scopeSelect.innerHTML = '<option value="0">📚 کل فصل (تمام بخش‌ها)</option>' +
       sections.map((s, idx) => `<option value="${s.section_index || idx + 1}">بخش ${s.section_index || idx + 1}: ${escapeHtml(s.section_title || '')} (ص ${s.start_page}-${s.end_page})</option>`).join('');
     if (currentVal && scopeSelect.querySelector(`option[value="${currentVal}"]`)) {
       scopeSelect.value = currentVal;
-    }
-  }
-
-  function renderMasterSummaryPane(data) {
-    const masterPane = document.getElementById('view-chapter-master-pane');
-    const masterLabel = document.getElementById('btn-chapter-master-label');
-    if (!masterPane) return;
-
-    if (data.final_summary) {
-      if (masterLabel) masterLabel.textContent = '🏆 ۲. خلاصه جامع و سند مرجع کل فصل ✨';
-      const raw = data.final_summary;
-      masterPane.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; background: var(--reader-surface-subtle); border: 1px solid var(--reader-border); border-radius: var(--radius-md); padding: 0.75rem 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
-          <span style="font-size: 0.95rem; color: var(--reader-text-muted); font-weight: 600;">🏆 سند مرجع و خلاصه جامع کل فصل</span>
-          <button type="button" class="btn btn-sm btn-primary" onclick="openChapterAssistantForMaster()" title="پرسش از دستیار هوشمند درباره کل فصل">
-            ✨ پرسش از دستیار درباره کل فصل
-          </button>
-        </div>
-        <div class="master-summary-content">
-          ${window.renderMarkdownWithKatex ? renderMarkdownWithKatex(raw) : (window.marked ? marked.parse(raw) : raw)}
-        </div>
-      `;
-      enhanceSectionCard(masterPane);
-    } else {
-      const isProc = data.status === 'PROCESSING' || data.status === 'PENDING';
-      if (masterLabel) masterLabel.textContent = isProc ? '🏆 ۲. خلاصه جامع کل فصل (در حال پردازش...)' : '🏆 ۲. خلاصه جامع کل فصل';
-      masterPane.innerHTML = `
-        <div style="text-align: center; padding: 3.5rem 1.5rem; background: var(--reader-surface-subtle); border: 1px dashed var(--reader-border); border-radius: var(--radius-md); margin-top: 1rem;">
-          <div style="font-size: 2.8rem; margin-bottom: 1rem;">🏆</div>
-          <h3 style="font-size: 1.15rem; margin-bottom: 0.5rem; color: var(--reader-heading);">خلاصه جامع و سند مرجع کل فصل</h3>
-          <p style="font-size: 0.9rem; color: var(--reader-text-muted); max-width: 540px; margin: 0 auto 1.5rem; line-height: 1.7;">
-            ${isProc ? 'سند خلاصه کلی و سنتز نهایی، پس از اتمام استخراج تمام بخش‌های فصل به صورت خودکار تدوین خواهد شد. در حال حاضر می‌توانید بخش‌های خلاصه‌شده را در تب بخش‌به‌بخش مطالعه نمایید.' : 'متنی برای خلاصه جامع ثبت نشده است.'}
-          </p>
-          <button type="button" class="btn btn-sm btn-primary" onclick="switchChapterViewTab('sections')">
-            ← بازگشت به مطالعه بخش‌های آماده
-          </button>
-        </div>
-      `;
     }
   }
 
@@ -1064,15 +1097,6 @@
       }
     }
 
-    // 3. Master Summary
-    const hadNoFinalSummary = !activeViewChapterData.final_summary;
-    if (hadNoFinalSummary && ch.final_summary) {
-      renderMasterSummaryPane(ch);
-      if (window.showToast) {
-        showToast('🏆 خلاصه جامع و سند مرجع کل فصل نیز با موفقیت تدوین شد!', 'success');
-      }
-    }
-
     // 4. Update download links
     const dlMd = document.getElementById('btn-download-chapter-md');
     if (dlMd) dlMd.href = `/api/chapters/${ch.id}/export?format=md`;
@@ -1094,7 +1118,6 @@
       document.getElementById('btn-download-chapter-docx').href = `/api/chapters/${chapterId}/export?format=docx`;
 
       updateModalLiveBanner(activeViewChapterData);
-      renderMasterSummaryPane(activeViewChapterData);
       renderSectionsPane(activeViewChapterData);
 
       const bodyEl = document.getElementById('view-chapter-body');
@@ -1102,7 +1125,6 @@
         window.applyReaderTheme(window.getSavedReaderTheme());
       }
 
-      switchChapterViewTab('sections');
       document.getElementById('view-chapter-modal').style.display = 'flex';
       document.body.style.overflow = 'hidden';
 
@@ -1116,41 +1138,84 @@
   }
 
   function switchChapterViewTab(tab) {
-    const btnMaster = document.getElementById('btn-chapter-view-master');
-    const btnSections = document.getElementById('btn-chapter-view-sections');
-    const masterPane = document.getElementById('view-chapter-master-pane');
-    const sectionsPane = document.getElementById('view-chapter-sections-pane');
-
-    if (tab === 'sections') {
-      btnMaster.className = 'btn btn-sm btn-secondary';
-      btnSections.className = 'btn btn-sm btn-primary';
-      masterPane.style.display = 'none';
-      sectionsPane.style.display = 'block';
-    } else {
-      btnSections.className = 'btn btn-sm btn-secondary';
-      btnMaster.className = 'btn btn-sm btn-primary';
-      sectionsPane.style.display = 'none';
-      masterPane.style.display = 'block';
-    }
+    // Only section notes view is supported
   }
 
   function toggleSectionAccordion(headerEl) {
     const body = headerEl.nextElementSibling;
     const arrow = headerEl.querySelector('.accordion-arrow');
+    const card = headerEl.closest('.chapter-section-note-card');
     if (!body) return;
     if (body.style.display === 'none') {
       body.style.display = 'block';
       if (arrow) arrow.textContent = '▼';
+      if (card) card.classList.remove('is-collapsed');
     } else {
       body.style.display = 'none';
       if (arrow) arrow.textContent = '◀';
+      if (card) card.classList.add('is-collapsed');
+      headerEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }
+
+  let isChapterFullscreen = false;
+
+  function toggleChapterFullscreen() {
+    const modal = document.getElementById('view-chapter-modal');
+    const dialog = document.getElementById('view-chapter-dialog');
+    const btn = document.getElementById('btn-chapter-fullscreen');
+    if (!modal || !dialog) return;
+
+    isChapterFullscreen = !isChapterFullscreen;
+
+    if (isChapterFullscreen) {
+      modal.classList.add('is-fullscreen');
+      dialog.classList.add('is-fullscreen');
+      if (btn) {
+        btn.innerHTML = '🗗 خروج';
+        btn.title = 'خروج از حالت تمام‌صفحه (Esc)';
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-primary');
+      }
+    } else {
+      modal.classList.remove('is-fullscreen');
+      dialog.classList.remove('is-fullscreen');
+      if (btn) {
+        btn.innerHTML = '⛶ تمام‌صفحه';
+        btn.title = 'حالت تمام‌صفحه و تمرکز (Focus Mode)';
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-secondary');
+      }
     }
   }
 
   function closeViewChapterModal() {
+    if (isChapterFullscreen) {
+      toggleChapterFullscreen();
+    }
+    const toolsMenu = document.getElementById('chapter-tools-dropdown-menu');
+    if (toolsMenu) toolsMenu.style.display = 'none';
     document.getElementById('view-chapter-modal').style.display = 'none';
     document.body.style.overflow = 'auto';
   }
+
+  function toggleChapterToolsDropdown(e) {
+    if (e) e.stopPropagation();
+    const menu = document.getElementById('chapter-tools-dropdown-menu');
+    if (!menu) return;
+    const isOpen = menu.style.display === 'block';
+    menu.style.display = isOpen ? 'none' : 'block';
+  }
+
+  document.addEventListener('click', function(e) {
+    const menu = document.getElementById('chapter-tools-dropdown-menu');
+    const btn = document.getElementById('btn-chapter-tools-dropdown');
+    if (menu && menu.style.display === 'block') {
+      if (!menu.contains(e.target) && (!btn || !btn.contains(e.target))) {
+        menu.style.display = 'none';
+      }
+    }
+  });
 
   function toggleChapterModalTheme() {
     if (window.cycleReaderTheme) {
@@ -1172,7 +1237,6 @@
 
       document.getElementById('edit-chapter-id').value = data.id;
       document.getElementById('edit-chapter-title').value = data.chapter_title;
-      document.getElementById('edit-chapter-text').value = data.final_summary || '';
 
       document.getElementById('edit-chapter-modal').style.display = 'flex';
       document.body.style.overflow = 'hidden';
@@ -1190,15 +1254,13 @@
     e.preventDefault();
     const id = document.getElementById('edit-chapter-id').value;
     const title = document.getElementById('edit-chapter-title').value.trim();
-    const text = document.getElementById('edit-chapter-text').value.trim();
 
     try {
       const res = await fetch(`/api/chapters/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          chapter_title: title,
-          final_summary: text
+          chapter_title: title
         })
       });
 
@@ -1319,6 +1381,10 @@
         closeChapterAssistantDrawer();
         return;
       }
+      if (isChapterFullscreen) {
+        toggleChapterFullscreen();
+        return;
+      }
       closeCreateChapterModal();
       closeViewChapterModal();
       closeEditChapterModal();
@@ -1430,7 +1496,7 @@
 
     if (labelSpan) {
       if (currentChapterQAScope === 0) {
-        labelSpan.textContent = 'خلاصه جامع کل فصل';
+        labelSpan.textContent = 'کل بخش‌های فصل';
       } else {
         labelSpan.textContent = `بخش ${currentChapterQAScope}`;
       }
@@ -1675,7 +1741,7 @@
               if (scopeSelect) scopeSelect.value = currentChapterQAScope.toString();
             }
           } else {
-            // In master pane
+            // Whole chapter
             currentChapterQAScope = 0;
             const scopeSelect = document.getElementById('ch-qa-scope-select');
             if (scopeSelect) scopeSelect.value = "0";

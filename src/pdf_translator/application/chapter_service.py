@@ -422,6 +422,7 @@ class ChapterService:
         if not summary:
             return None
         summary.chunk_notes_json = None
+        summary.intermediate_summaries_json = None
         summary.final_summary = None
         summary.status = "PENDING"
         summary.progress_percent = 0
@@ -432,11 +433,10 @@ class ChapterService:
 
     async def process_chapter_summary(self, summary_id: str, resume: bool = True):
         """
-        Asynchronous background task implementing Hierarchical Map-Reduce with Resume capability:
+        Asynchronous background task implementing section-by-section technical note extraction:
         1. Gathers and on-demand extracts pages text.
         2. Splits by Headings (# and ##) and trims trailing references.
-        3. Map phase: extracts rich technical notes per heading section (skipping already-cached sections if resuming).
-        4. Reduce phase: synthesizes all section notes into a unified master reference note.
+        3. Extracts rich technical notes per heading section (skipping already-cached sections if resuming).
         """
         summary = self.chapter_summary_repo.get_by_id(summary_id)
         if not summary:
@@ -540,7 +540,7 @@ class ChapterService:
                     chunk_notes.append(cached)
                     continue
 
-                pct = 10 + int((idx / total_sections) * 65)
+                pct = 10 + int(((idx + 1) / total_sections) * 90)
                 summary.progress_percent = pct
                 summary.progress_message = f"در حال استخراج نوت بخش {idx + 1} از {total_sections}: «{sec['section_title'][:40]}...» (صفحات {sec['start_page']} تا {sec['end_page']})..."
                 self.chapter_summary_repo.save(summary)
@@ -620,76 +620,10 @@ class ChapterService:
 
                 summary.chunk_notes_json = json.dumps(chunk_notes, ensure_ascii=False)
                 self.chapter_summary_repo.save(summary)
-            # 5. Phase 2: Reduce / Synthesis (Consolidate into Master Chapter Note)
-            if total_sections == 1:
-                final_summary = chunk_notes[0]["note"]
-            else:
-                summary.progress_percent = 80
-                summary.progress_message = "در حال تجمیع، ساختاردهی و تدوین نهایی سند خلاصه فصل..."
-                self.chapter_summary_repo.save(summary)
-
-                all_notes_text = "\n\n---\n\n".join([
-                    f"### بخش {cn['section_index']}: {cn['section_title']} (صفحات {cn['start_page']} تا {cn['end_page']}):\n{cn['note']}"
-                    for cn in chunk_notes
-                ])
-
-                if template_obj:
-                    synthesis_prompt = (
-                        template_obj.synthesis_template
-                        .replace("{chapter_title}", summary.chapter_title)
-                        .replace("{start_page}", str(summary.start_page))
-                        .replace("{end_page}", str(summary.end_page))
-                        .replace("{all_chunk_notes}", all_notes_text)
-                    )
-                    synthesis_prompt += "\n\nدستورالعمل خروجی: این سند باید یک مرجع جامع، عمیق و شاهکار نوت‌برداری باشد. مستقیماً از عنوان اصلی شروع کنید و هیچ‌گونه مقدمه، احوالپرسی یا تعارف اضافه نکنید."
-                else:
-                    synthesis_prompt = f"""شما یک معمار ارشد نرم‌افزار، پژوهشگر برجسته و ویراستار متون تخصصی فارسی هستید.
-در ادامه، مجموعه یادداشت‌های استخراج‌شده از بخش‌های مختلف فصل «{summary.chapter_title}» (صفحات {summary.start_page} تا {summary.end_page}) قرار دارد.
-
-وظیفه شما تدوین یک «سند نوت‌برداری و خلاصه مرجع، جامع، عمیق و ماندگار» برای این فصل است:
-<source_document>
-{all_notes_text}
-</source_document>
-
-قوانین نگارش:
-- لحن و نثر: کاملاً روان، خودمانی، ساده و خوش‌خوان فارسی (بدون تعارف و جملات سنگین یا اداری؛ روان و صمیمی مانند بیان یک مهندس ارشد برای همکارش).
-- اصطلاحات تخصصی مهندسی نرم‌افزار حتماً با ذکر عنوان انگلیسی در پرانتز قید شوند.
-- فرمول‌های ریاضی و علمی در قالب استاندارد LaTeX ($...$ و $$...$$) نوشته شوند.
-- از کلی‌گویی پرهیز کنید و جزئیات فنی، مکانیزم‌ها، چرایی تصمیمات و مصالحه‌ها را با عمق بالا پوشش دهید.
-ساختار الزامی سند نهایی:
-# 🎯 ۱. رسالت فصل و صورت‌مسئله بنیادین (Core Problem & Thesis)
-## 🧠 ۲. نقشه مفهومی و واژگان کلیدی (Mental Model & Terminology)
-## 🔍 ۳. تحلیل موشکافانه ایده‌ها و مکانیزم‌های معماری (Deep Technical Breakdown)
-## ⚖️ ۴. ماتریس تصمیم‌گیری و مصالحه‌های فنی (Trade-offs & Decisions Matrix)
-## ⚡ ۵. چک‌لیست مرور سریع و نکات طلایی (Quick Recall Takeaways)
-
-دستورالعمل خروجی:
-مستقیماً از عنوان اصلی (# 🎯 ۱. ...) شروع کنید و هیچ پیام آغازین، تعارف یا توضیحات اضافی اضافه نکنید."""
-                final_summary = await provider.translate(
-                    source_text=synthesis_prompt,
-                    source_language=project.source_language,
-                    target_language="Persian",
-                    system_prompt="",
-                )
-
-                # Safeguard: verify final_summary is not a stale copy of the last chunk note
-                if len(chunk_notes) > 1 and final_summary.strip() == chunk_notes[-1]["note"].strip():
-                    logger.warning("Stale response detected on synthesis. Retrying synthesis...")
-                    final_summary = await provider.translate(
-                        source_text=synthesis_prompt,
-                        source_language=project.source_language,
-                        target_language="Persian",
-                        system_prompt="",
-                    )
-
-            if final_summary:
-                final_summary = clean_markdown_persian(final_summary)
-
-            # 6. Complete
-            summary.final_summary = final_summary.strip()
+            # 5. Complete: All section notes extracted
             summary.status = "COMPLETED"
             summary.progress_percent = 100
-            summary.progress_message = "نوت‌برداری و خلاصه‌سازی فصل با موفقیت تکمیل شد."
+            summary.progress_message = f"نوت‌برداری {total_sections} بخش فصل با موفقیت تکمیل شد."
             summary.updated_at = datetime.utcnow()
             self.chapter_summary_repo.save(summary)
 
@@ -705,9 +639,9 @@ class ChapterService:
             summary.updated_at = datetime.utcnow()
             self.chapter_summary_repo.save(summary)
     def export_chapter_summary(self, summary_id: str, format_type: str = "md") -> tuple[Path, str]:
-        """Exports chapter summary as Markdown or DOCX file."""
+        """Exports chapter section notes as Markdown or DOCX file."""
         summary = self.chapter_summary_repo.get_by_id(summary_id)
-        if not summary or (not summary.final_summary and not summary.chunk_notes_json):
+        if not summary or not summary.chunk_notes_json:
             raise ValueError(f"Chapter summary {summary_id} not found or has no notes yet")
 
         project = self.project_repo.get_by_id(summary.project_id)
@@ -715,63 +649,46 @@ class ChapterService:
         export_dir = Path(project.storage_dir) / "exports" if project and project.storage_dir else Path.home() / ".pdf_translator" / "exports"
         export_dir.mkdir(parents=True, exist_ok=True)
 
+        sections = []
+        try:
+            sections = json.loads(summary.chunk_notes_json)
+        except Exception:
+            pass
+
         if format_type.lower() == "docx":
             filename = f"Chapter_{summary.start_page}_{summary.end_page}_{safe_title}.docx"
             out_file = export_dir / filename
             doc = Document()
-            
+
             # Title
             title_p = doc.add_paragraph()
             title_p.add_run(summary.chapter_title).bold = True
             doc.add_paragraph(f"صفحات {summary.start_page} الی {summary.end_page}")
             doc.add_paragraph("=" * 40)
 
-            # Final Master Summary
-            if summary.final_summary:
-                for par in summary.final_summary.split("\n\n"):
-                    if par.strip():
-                        render_markdown_paragraph_to_docx(doc, par, project.storage_dir if project else None)
-            else:
-                p_warn = doc.add_paragraph()
-                p_warn.add_run("⚠️ یادداشت: خلاصه جامع کل فصل هنوز تدوین نشده است (استخراج بخش‌ها در حال انجام است).").italic = True
-            # Also append Section-by-Section notes if available
-            if summary.chunk_notes_json:
-                try:
-                    sections = json.loads(summary.chunk_notes_json)
-                    if sections:
-                        doc.add_page_break()
-                        h_sec = doc.add_paragraph()
-                        h_sec.add_run("یادداشت‌های تفصیلی بخش‌به‌بخش (Heading Notes)").bold = True
-                        doc.add_paragraph("-" * 40)
-                        for s in sections:
-                            p_s = doc.add_paragraph()
-                            p_s.add_run(f"بخش {s.get('section_index')}: {s.get('section_title')} (صفحات {s.get('start_page')} الی {s.get('end_page')})").bold = True
-                            for par in (s.get("note") or "").split("\n\n"):
-                                if par.strip():
-                                    render_markdown_paragraph_to_docx(doc, par, project.storage_dir if project else None)
-                except Exception:
-                    pass
+            # Section-by-Section notes
+            if sections:
+                for s in sections:
+                    p_s = doc.add_paragraph()
+                    p_s.add_run(f"بخش {s.get('section_index')}: {s.get('section_title')} (صفحات {s.get('start_page')} الی {s.get('end_page')})").bold = True
+                    for par in (s.get("note") or "").split("\n\n"):
+                        if par.strip():
+                            render_markdown_paragraph_to_docx(doc, par, project.storage_dir if project else None)
+                    doc.add_paragraph("-" * 20)
 
             doc.save(str(out_file))
             return out_file, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:
             filename = f"Chapter_{summary.start_page}_{summary.end_page}_{safe_title}.md"
             out_file = export_dir / filename
-            master_text = summary.final_summary or "*(خلاصه جامع کل فصل هنوز تدوین نشده است - استخراج بخش‌ها در حال انجام است)*"
-            content = f"# {summary.chapter_title}\n\n**صفحات:** {summary.start_page} الی {summary.end_page}\n\n---\n\n{master_text}\n"
-            
-            # Append Section-by-Section notes in markdown
-            if summary.chunk_notes_json:
-                try:
-                    sections = json.loads(summary.chunk_notes_json)
-                    if sections:
-                        content += "\n\n---\n\n# 📑 یادداشت‌های تفصیلی بخش‌به‌بخش (Detailed Section Notes)\n\n"
-                        for s in sections:
-                            content += f"## بخش {s.get('section_index')}: {s.get('section_title')}\n"
-                            content += f"**صفحات {s.get('start_page')} الی {s.get('end_page')}**\n\n"
-                            content += f"{s.get('note')}\n\n---\n\n"
-                except Exception:
-                    pass
+            content = f"# {summary.chapter_title}\n\n**صفحات:** {summary.start_page} الی {summary.end_page}\n\n---\n\n"
+
+            # Section-by-Section notes in markdown
+            if sections:
+                for s in sections:
+                    content += f"## بخش {s.get('section_index')}: {s.get('section_title')}\n"
+                    content += f"**صفحات {s.get('start_page')} الی {s.get('end_page')}**\n\n"
+                    content += f"{s.get('note')}\n\n---\n\n"
 
             out_file.write_text(content, encoding="utf-8")
             return out_file, "text/markdown"
@@ -793,7 +710,7 @@ class ChapterService:
             name=dto.name.strip(),
             description=dto.description.strip() if dto.description else None,
             chunk_template=dto.chunk_template.strip(),
-            synthesis_template=dto.synthesis_template.strip(),
+            synthesis_template=(dto.synthesis_template or "").strip() if dto.synthesis_template else None,
             is_default=dto.is_default,
         )
         saved = self.chapter_prompt_template_repo.save(template)
@@ -820,7 +737,7 @@ class ChapterService:
         if dto.chunk_template is not None:
             tpl.chunk_template = dto.chunk_template.strip()
         if dto.synthesis_template is not None:
-            tpl.synthesis_template = dto.synthesis_template.strip()
+            tpl.synthesis_template = dto.synthesis_template.strip() if dto.synthesis_template else None
         tpl.updated_at = datetime.utcnow()
 
         saved = self.chapter_prompt_template_repo.save(tpl)
@@ -828,6 +745,7 @@ class ChapterService:
 
     def delete_chapter_prompt_template(self, template_id: str) -> bool:
         return self.chapter_prompt_template_repo.delete(template_id)
+
 
     @staticmethod
     def _to_summary_dto(s: ChapterSummary) -> ChapterSummaryDTO:
@@ -840,6 +758,7 @@ class ChapterService:
             source_type=s.source_type,
             prompt_template_id=s.prompt_template_id,
             chunk_notes_json=s.chunk_notes_json,
+            intermediate_summaries_json=getattr(s, "intermediate_summaries_json", None),
             final_summary=s.final_summary,
             status=s.status,
             progress_percent=s.progress_percent,
@@ -848,7 +767,6 @@ class ChapterService:
             created_at=s.created_at,
             updated_at=s.updated_at,
         )
-
     @staticmethod
     def _to_template_dto(t: ChapterPromptTemplate) -> ChapterPromptTemplateDTO:
         return ChapterPromptTemplateDTO(

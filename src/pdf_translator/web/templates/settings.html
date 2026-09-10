@@ -208,7 +208,7 @@
         <div class="form-group" style="margin-top: 1rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.35rem;">
             <label class="form-label" style="margin: 0; font-weight: 700; color: #60a5fa;" for="ch-tpl-chunk-input">
-              ۱. پرامپت استخراج نوت از هر بخش (Chunk Template)
+              پرامپت استخراج نوت از هر بخش (Chunk Template)
             </label>
             <div style="display: flex; gap: 0.25rem;">
               <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-chunk-input', '{chapter_title}')">+ {chapter_title}</button>
@@ -220,19 +220,6 @@
           <textarea id="ch-tpl-chunk-input" rows="6" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.86rem; line-height: 1.6; background: #0b1120; color: #f1f5f9;" required></textarea>
         </div>
 
-        <!-- Step 2: Synthesis Prompt -->
-        <div class="form-group" style="margin-top: 1rem;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; flex-wrap: wrap; gap: 0.35rem;">
-            <label class="form-label" style="margin: 0; font-weight: 700; color: #34d399;" for="ch-tpl-synthesis-input">
-              ۲. پرامپت سنتز و تجمیع نهایی فصل (Synthesis Template)
-            </label>
-            <div style="display: flex; gap: 0.25rem;">
-              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-synthesis-input', '{chapter_title}')">+ {chapter_title}</button>
-              <button type="button" class="btn btn-secondary btn-sm" style="font-size: 0.7rem; padding: 0.1rem 0.35rem;" onclick="insertChTplVar('ch-tpl-synthesis-input', '{all_chunk_notes}')">+ {all_chunk_notes}</button>
-            </div>
-          </div>
-          <textarea id="ch-tpl-synthesis-input" rows="7" class="form-control" style="font-family: 'Vazirmatn', sans-serif; font-size: 0.86rem; line-height: 1.6; background: #0b1120; color: #f1f5f9;" required></textarea>
-        </div>
 
         <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
           <input type="checkbox" id="ch-tpl-default-input" style="cursor: pointer;">
@@ -468,15 +455,9 @@
                 ${t.is_default ? '<span class="badge badge-ready" style="font-size: 0.72rem;">پیش‌فرض</span>' : ''}
               </div>
               ${t.description ? `<p style="font-size: 0.85rem; color: #94a3b8; margin: 0 0 0.5rem 0;">${t.description}</p>` : ''}
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.5rem;">
-                <div>
-                  <small style="color: #60a5fa; font-weight: 700; display: block; margin-bottom: 0.2rem;">۱. پرامپت استخراج چانک:</small>
-                  <div style="background: #0b1120; border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-size: 0.78rem; color: #cbd5e1; white-space: pre-wrap; max-height: 80px; overflow-y: auto;">${t.chunk_template}</div>
-                </div>
-                <div>
-                  <small style="color: #34d399; font-weight: 700; display: block; margin-bottom: 0.2rem;">۲. پرامپت سنتز نهایی:</small>
-                  <div style="background: #0b1120; border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-size: 0.78rem; color: #cbd5e1; white-space: pre-wrap; max-height: 80px; overflow-y: auto;">${t.synthesis_template}</div>
-                </div>
+              <div style="margin-top: 0.5rem;">
+                <small style="color: #60a5fa; font-weight: 700; display: block; margin-bottom: 0.2rem;">پرامپت استخراج نوت بخش‌ها:</small>
+                <div style="background: #0b1120; border-radius: var(--radius-sm); padding: 0.5rem 0.75rem; font-size: 0.78rem; color: #cbd5e1; white-space: pre-wrap; max-height: 80px; overflow-y: auto;">${t.chunk_template}</div>
               </div>
             </div>
             <div style="display: flex; gap: 0.35rem;">
@@ -496,7 +477,6 @@
     document.getElementById('ch-tpl-name-input').value = '';
     document.getElementById('ch-tpl-desc-input').value = '';
     document.getElementById('ch-tpl-chunk-input').value = `شما یک معمار نرم‌افزار و پژوهشگر ارشد هستید. متن زیر از فصل «{chapter_title}» (صفحات {start_page} تا {end_page}) را به دقت مطالعه و نوت‌برداری عمیق و تخصصی کنید:\n\nمتن استخراج‌شده:\n"""\n{content_text}\n"""\n\nدستورالعمل:\n- صورت‌مسئله‌ها، مفاهیم معماری، الگوریتم‌ها و فرمول‌های ریاضی (LaTeX) را به طور کامل استخراج کنید.`;
-    document.getElementById('ch-tpl-synthesis-input').value = `مجموعه نوت‌های بخش‌های مختلف فصل «{chapter_title}» در زیر آمده است:\n\"\"\"\n{all_chunk_notes}\n\"\"\"\n\nلطفاً یک سند مرجع و خلاصه جامع، ساختاریافته و ماندگار برای این فصل تدوین کنید:`;
     document.getElementById('ch-tpl-default-input').checked = false;
     document.getElementById('chapter-template-modal-title').textContent = '➕ افزودن قالب نوت‌برداری جدید';
     document.getElementById('chapter-template-modal').style.display = 'flex';
@@ -510,7 +490,6 @@
     document.getElementById('ch-tpl-name-input').value = tpl.name;
     document.getElementById('ch-tpl-desc-input').value = tpl.description || '';
     document.getElementById('ch-tpl-chunk-input').value = tpl.chunk_template;
-    document.getElementById('ch-tpl-synthesis-input').value = tpl.synthesis_template;
     document.getElementById('ch-tpl-default-input').checked = tpl.is_default;
     document.getElementById('chapter-template-modal-title').textContent = `✏️ ویرایش قالب: ${tpl.name}`;
     document.getElementById('chapter-template-modal').style.display = 'flex';
@@ -536,10 +515,8 @@
     const name = document.getElementById('ch-tpl-name-input').value.trim();
     const description = document.getElementById('ch-tpl-desc-input').value.trim();
     const chunk_template = document.getElementById('ch-tpl-chunk-input').value.trim();
-    const synthesis_template = document.getElementById('ch-tpl-synthesis-input').value.trim();
-    const is_default = document.getElementById('ch-tpl-default-input').checked;
 
-    const payload = { name, description, chunk_template, synthesis_template, is_default };
+    const payload = { name, description, chunk_template, is_default };
 
     try {
       let res;

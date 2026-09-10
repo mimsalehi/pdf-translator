@@ -196,6 +196,7 @@ class ChapterSummary(SQLModel, table=True):
     source_type: str = Field(default="source")  # "source" (English original) or "translation" (Persian)
     prompt_template_id: Optional[str] = Field(default=None)
     chunk_notes_json: Optional[str] = Field(default=None)
+    intermediate_summaries_json: Optional[str] = Field(default=None)
     final_summary: Optional[str] = Field(default=None)
     status: str = Field(default="PENDING")  # PENDING, PROCESSING, COMPLETED, FAILED
     progress_percent: int = Field(default=0)
@@ -212,7 +213,7 @@ class ChapterPromptTemplate(SQLModel, table=True):
     name: str = Field(index=True)
     description: Optional[str] = Field(default=None)
     chunk_template: str
-    synthesis_template: str
+    synthesis_template: Optional[str] = Field(default=None)
     is_default: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

@@ -285,7 +285,6 @@ async def test_ask_chapter_question_section_and_master(qa_test_env, monkeypatch)
                 "note": "نوت بخش ۲ درباره تکثیر داده و دسترسی‌پذیری."
             }
         ], ensure_ascii=False),
-        final_summary="# خلاصه جامع فصل اول\n\nاین سند ترکیب تمام بخش‌ها است.",
         status="COMPLETED"
     )
     saved_ch = ch_summary_repo.save(ch)
@@ -317,7 +316,8 @@ async def test_ask_chapter_question_section_and_master(qa_test_env, monkeypatch)
     )
     convo2 = await service.ask_chapter_question(saved_ch.id, dto2)
     assert convo2.section_index is None
-    assert "خلاصه جامع فصل اول" in captured[1]
+    assert "تکثیر داده و دسترسی‌پذیری" in captured[1]
+    assert "مقیاس‌پذیری و بار کاری" in captured[1]
 
     # 3. List conversations for Section 2 vs Master
     sec2_convos = service.list_chapter_conversations(saved_ch.id, section_index=2)

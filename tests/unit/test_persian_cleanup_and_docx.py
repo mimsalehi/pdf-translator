@@ -172,3 +172,25 @@ def test_docx_exporter_assemble_book(tmp_path: Path):
     exporter.assemble_book(project, [page], out_book)
     assert out_book.exists()
     assert out_book.stat().st_size > 0
+
+def test_clean_markdown_persian_normalizes_bold_with_spaces():
+    """Verifies that bold delimiters with trailing spaces before closing ** are normalized to valid CommonMark."""
+    raw = "**Embedding همیشه مناسب نیست: ** این یک توضیح است."
+    cleaned = clean_markdown_persian(raw)
+    assert "**Embedding همیشه مناسب نیست:**" in cleaned
+    assert not cleaned.startswith("**Embedding همیشه مناسب نیست: **")
+
+def test_clean_markdown_persian_normalizes_consecutive_bold_items_with_hyphens():
+    """Verifies that consecutive bold items with trailing spaces and hyphens (**Word **- **Word 2 **-)
+    are all cleanly normalized to valid CommonMark bold without corrupting or skipping earlier items.
+    """
+    raw = "**Star Schema **- **Snowflake Schema **- **Dimensional Modeling **- **One Big Table (OBT) **- فرایند ETL داده‌های سیستم‌های عملیاتی را به schema انتخاب‌شده در Data Warehouse تبدیل می‌کند."
+    cleaned = clean_markdown_persian(raw)
+    assert "**Star Schema** - " in cleaned
+    assert "**Snowflake Schema** - " in cleaned
+    assert "**Dimensional Modeling** - " in cleaned
+    assert "**One Big Table (OBT)** - " in cleaned
+    assert "**Star Schema **" not in cleaned
+    assert "**Snowflake Schema **" not in cleaned
+    assert "**Dimensional Modeling **" not in cleaned
+    assert "**One Big Table (OBT) **" not in cleaned

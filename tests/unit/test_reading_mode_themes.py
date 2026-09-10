@@ -109,3 +109,21 @@ def test_templates_integrate_reader_theme_picker():
         assert 'data-theme="paper"' in tmpl
         assert 'data-theme="sepia"' in tmpl
         assert 'data-theme="sage"' in tmpl
+
+
+def test_chapter_reader_fullscreen_topbar_layout():
+    """Verify chapter summary reading mode has unified topbar and maximized reading space in fullscreen."""
+    project_detail_html = (TEMPLATES_DIR / "project_detail.html").read_text(encoding="utf-8")
+    css_content = CSS_PATH.read_text(encoding="utf-8")
+
+    # 1. Template: subnav inside header for a single unified topbar
+    assert 'class="reader-modal-header chapter-reader-header"' in project_detail_html
+    assert 'id="chapter-modal-subnav"' in project_detail_html
+    assert 'id="btn-chapter-fullscreen"' in project_detail_html
+
+    # 2. CSS: Fullscreen unified topbar styling
+    assert ".reader-modal-dialog.is-fullscreen .reader-modal-header" in css_content
+    assert ".reader-modal-dialog.is-fullscreen .chapter-modal-subnav" in css_content
+    assert ".reader-modal-dialog.is-fullscreen .chapter-master-summary-banner" in css_content
+    assert "display: none !important" in css_content
+    assert ".reader-modal-dialog.is-fullscreen .chapter-section-header" in css_content

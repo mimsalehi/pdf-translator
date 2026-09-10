@@ -130,6 +130,7 @@ class ChapterSummaryDTO(BaseModel):
     source_type: str
     prompt_template_id: Optional[str] = None
     chunk_notes_json: Optional[str] = None
+    intermediate_summaries_json: Optional[str] = None
     final_summary: Optional[str] = None
     status: str
     progress_percent: int
@@ -157,7 +158,7 @@ class ChapterPromptTemplateDTO(BaseModel):
     name: str
     description: Optional[str] = None
     chunk_template: str
-    synthesis_template: str
+    synthesis_template: Optional[str] = None
     is_default: bool
     created_at: datetime
     updated_at: datetime
@@ -167,7 +168,7 @@ class ChapterPromptTemplateCreateDTO(BaseModel):
     name: str
     description: Optional[str] = None
     chunk_template: str
-    synthesis_template: str
+    synthesis_template: Optional[str] = None
     is_default: bool = False
 
 

@@ -69,7 +69,6 @@ def chapter_test_env(tmp_path):
         default_tpl = ChapterPromptTemplate(
             name="پیش‌فرض تست",
             chunk_template="خلاصه کن: {content_text}",
-            synthesis_template="ترکیب کن: {all_chunk_notes}",
             is_default=True,
         )
         tpl_repo.save(default_tpl)
@@ -145,9 +144,10 @@ async def test_process_chapter_summary_map_reduce_flow(chapter_test_env):
     summary = service.get_chapter_summary(created.id)
     assert summary.status == "COMPLETED"
     assert summary.progress_percent == 100
-    assert summary.final_summary is not None
-    assert len(summary.final_summary) > 0
     assert summary.chunk_notes_json is not None
+    chunks = json.loads(summary.chunk_notes_json)
+    assert len(chunks) > 0
+    assert all(c.get("note") for c in chunks)
 
 
 def test_export_chapter_summary_md_and_docx(chapter_test_env):
@@ -162,10 +162,11 @@ def test_export_chapter_summary_md_and_docx(chapter_test_env):
     )
     created = service.create_chapter_summary(proj.id, dto)
 
-    # Manually populate final summary for export test
-    service.update_chapter_summary(created.id, ChapterSummaryUpdateDTO(
-        final_summary="# فصل اول\n\nاین یک خلاصه تستی است.\n\n- نکته ۱\n- نکته ۲"
-    ))
+    ch_obj = service.chapter_summary_repo.get_by_id(created.id)
+    ch_obj.chunk_notes_json = json.dumps([
+        {"section_index": 1, "section_title": "فصل اول", "start_page": 1, "end_page": 3, "note": "این یک خلاصه تستی است.\n\n- نکته ۱\n- نکته ۲"}
+    ], ensure_ascii=False)
+    service.chapter_summary_repo.save(ch_obj)
 
     # Export MD
     md_path, md_mime = service.export_chapter_summary(created.id, "md")
@@ -187,7 +188,6 @@ def test_chapter_prompt_templates_crud(chapter_test_env):
         name="قالب تستی",
         description="توضیح تستی",
         chunk_template="چانک: {content_text}",
-        synthesis_template="سنتز: {all_chunk_notes}",
         is_default=False,
     )
     tpl = service.create_chapter_prompt_template(create_dto)
@@ -308,8 +308,6 @@ async def test_resume_chapter_summary_skips_cached_chunks(chapter_test_env):
 
     resumed = service.get_chapter_summary(created.id)
     assert resumed.status == "COMPLETED"
-    assert resumed.final_summary is not None
-    assert len(resumed.final_summary) > 0
 
     # Verify pre-cached section was retained
     final_chunks = json.loads(resumed.chunk_notes_json)
@@ -415,9 +413,8 @@ async def test_safe_insert_multiline_prompt_logic():
     multiline = "Line 1\nLine 2\n\nParagraph 2 with LaTeX"
     await bm._safe_insert_multiline_prompt(mock_page, multiline)
 
-    # Verify evaluate was called and native CDP keyboard.insert_text received the entire text
+    # Verify evaluate was called (execCommand insertText)
     assert mock_page.evaluate.call_count >= 1
-    mock_page.keyboard.insert_text.assert_awaited_with(multiline)
 
 @pytest.mark.asyncio
 async def test_submit_and_verify_prompt_presses_enter_when_button_disabled():
@@ -714,3 +711,4 @@ async def test_incremental_section_availability_during_processing(chapter_test_e
     assert final_summary.status == "COMPLETED"
     chunks = json.loads(final_summary.chunk_notes_json)
     assert len(chunks) == 3
+

@@ -414,25 +414,28 @@ class QAService:
         if not project:
             raise ProjectNotFoundError(summary.project_id)
 
-        # 1. Determine relevant context (Section note vs Master summary)
+        # 1. Determine relevant context from section notes
         sec_idx = dto.section_index if (dto.section_index is not None and dto.section_index > 0) else None
         context_title = summary.chapter_title
         context_body = ""
 
-        if sec_idx is not None and summary.chunk_notes_json:
+        if summary.chunk_notes_json:
             import json
             try:
                 chunks = json.loads(summary.chunk_notes_json)
-                target_chunk = next((c for c in chunks if c.get("section_index") == sec_idx), None)
-                if target_chunk:
-                    context_title = f"{summary.chapter_title} - بخش {sec_idx}: {target_chunk.get('section_title', '')} (صفحات {target_chunk.get('start_page')}-{target_chunk.get('end_page')})"
-                    context_body = target_chunk.get("note", "")
+                if sec_idx is not None:
+                    target_chunk = next((c for c in chunks if c.get("section_index") == sec_idx), None)
+                    if target_chunk:
+                        context_title = f"{summary.chapter_title} - بخش {sec_idx}: {target_chunk.get('section_title', '')} (صفحات {target_chunk.get('start_page')}-{target_chunk.get('end_page')})"
+                        context_body = target_chunk.get("note", "")
+                else:
+                    context_title = f"{summary.chapter_title} (مجموع نوت‌های بخش‌ها)"
+                    context_body = "\n\n---\n\n".join([
+                        f"### بخش {c.get('section_index')}: {c.get('section_title')} (صفحات {c.get('start_page')}-{c.get('end_page')}):\n{c.get('note', '')}"
+                        for c in chunks
+                    ])
             except Exception:
                 pass
-
-        if not context_body:
-            context_body = summary.final_summary or ""
-
         # Retrieve previous conversation history on this chapter note/section
         previous_convos = self.chapter_conversation_repo.list_by_chapter(chapter_summary_id, sec_idx)
         history_text = ""

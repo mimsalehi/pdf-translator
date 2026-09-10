@@ -1,5 +1,5 @@
 """Database initialization and session management."""
-from sqlmodel import SQLModel, create_engine, Session, select
+from sqlmodel import SQLModel, create_engine, Session, select, text
 from typing import Generator
 from pdf_translator.config import settings
 from pdf_translator.domain.entities import (
@@ -33,7 +33,13 @@ def init_db():
     """Create all tables and ensure default profile and prompt templates exist."""
     eng = get_engine()
     SQLModel.metadata.create_all(eng)
-    
+    with eng.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE chapter_summaries ADD COLUMN intermediate_summaries_json TEXT"))
+            conn.commit()
+        except Exception:
+            pass
+
     with Session(eng) as session:
         # Default Translation Profile
         statement = select(TranslationProfile).where(TranslationProfile.name == "Default Technical English to Persian")
@@ -177,36 +183,6 @@ def init_db():
 ۸. بازبینی نهایی: متن نوت را مانند یک ویراستار بازخوانی کنید تا جملات طولانی و انگلیسی‌زده نشوند.
 
 خروجی باید شامل استخراج کامل صورت‌مسئله‌ها، مفاهیم معماری، نحوه عملکرد مکانیزم‌ها، چرایی تصمیمات فنی و نکات طلایی باشد.""",
-                    synthesis_template="""شما یک **مترجم ارشد، ویراستار زبردست فارسی و استاد مهندسی نرم‌افزار** هستید.
-در ادامه، مجموعه نوت‌های استخراج‌شده از بخش‌های مختلف فصل «{chapter_title}» (صفحات {start_page} تا {end_page}) قرار دارد.
-وظیفه شما سنتز، یکپارچه‌سازی و تدوین یک «سند نوت‌برداری و خلاصه مرجع، عمیق و ماندگار» برای این فصل است به طوری که خواننده حتی پس از ماه‌ها، با یک بار خواندن تمام مباحث اساسی این فصل را کامل به یاد آورد.
-
-مجموعه نوت‌های بخش‌های مختلف این فصل:
-\"\"\"
-{all_chunk_notes}
-\"\"\"
-
-قوانین نگارش و ترجمه:
-- متن نهایی باید کاملاً طبیعی، روان، خوش‌خوان و فارسی اصیل باشد؛ خواننده نباید حس کند در حال خواندن ترجمه یا خروجی ماشینی است.
-- قواعد ضد لحن هوش مصنوعی: اکیداً از «می‌باشد/می‌گردد» و عبارات تشریفاتی («لازم به ذکر است»، «شایان ذکر است») پرهیز نموده و افعال «است/شد/کرد» را به کار ببرید.
-- دستور خط فارسی: نیم‌فاصله‌ها، گیومه فارسی «...» و علائم نگارشی فارسی چسبیده به واژه قبلی رعایت شوند.
-- اصطلاحات تخصصی مهندسی نرم‌افزار باید همراه با معادل انگلیسی در پرانتز باشند.
-- فرمول‌ها حتماً در قالب استاندارد LaTeX ($...$ یا $$...$$) نوشته شوند.
-ساختار الزامی سند خلاصه فصل:
-# 🎯 ۱. صورت‌مسئله اصلی و رسالت فصل (Core Problem & Thesis)
-تبیین چالش بنیادینی که این فصل به حل آن می‌پردازد و چرایی اهمیت آن در سیستم‌ها.
-
-## 🧠 ۲. نقشه مفهومی و واژگان کلیدی (Mental Model & Terminology)
-تعریف دقیق اصطلاحات و مدل‌های ذهنی معرفی‌شده همراه با اصطلاح انگلیسی در پرانتز.
-
-## 🔍 ۳. تحلیل موشکافانه بخش‌های فصل (Deep Technical Breakdown)
-تحلیل عمیق و ساختاریافته ایده‌ها، الگوریتم‌ها، مکانیزم‌های عملکردی و فرمول‌های محاسباتی.
-
-## ⚖️ ۴. جدول مقایسه، مصالحه‌ها و تصمیم‌گیری‌های فنی (Trade-offs Table)
-جدول مارک‌داون مقایسه رویکردها، مزایا، معایب و شرایط انتخاب هرکدام.
-
-## ⚡ ۵. چک‌لیست مرور سریع و نکات طلایی (Quick Recall Takeaways)
-۱۰ الی ۱۵ بند کلیدی و فشرده برای مرور سریع فصل در کمتر از ۲ دقیقه.""",
                     is_default=True
                 ),
                 ChapterPromptTemplate(
@@ -222,18 +198,6 @@ def init_db():
 دستورالعمل:
 - نکات کلیدی، تعاریف و چالش‌ها را به صورت بولت‌پوینت‌های کوتاه، مستقیم و دقیق به فارسی استخراج کنید.
 - فرمول‌های موجود را در قالب LaTeX درج کنید.""",
-                    synthesis_template="""مجموعه یادداشت‌های بخش‌های فصل «{chapter_title}» (صفحات {start_page} تا {end_page}) در زیر آمده است:
-\"\"\"
-{all_chunk_notes}
-\"\"\"
-
-یک خلاصه فشرده، ساختاریافته و سریع به زبان فارسی در قالب زیر ارائه دهید:
-# ⚡ خلاصه سریع و نکات طلایی فصل: {chapter_title}
-## ۱. خلاصه در یک پاراگراف (Elevator Pitch)
-## ۲. مهم‌ترین درس‌ها و آموزه‌های فصل (Key Lessons)
-## ۳. اصطلاحات و تعاریف محوری
-## ۴. چک‌لیست اقدامات و توصیه‌های عملی""",
-                    is_default=False
                 ),
             ]
             for ct in chapter_defaults:

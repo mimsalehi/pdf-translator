@@ -218,9 +218,8 @@ def fix_punctuation_spacing(text: str) -> str:
     # Remove space before punctuation
     text = re.sub(r"[ \t]+([،؛؟!.:])", r"\1", text)
 
-    # Ensure single space after punctuation when followed by Persian/alphanumeric
-    text = re.sub(r"([،؛؟!:])(?=[^\s\d،؛؟!:.\)\]\}»\"'\/])", r"\1 ", text)
-
+    # Ensure single space after punctuation when followed by Persian/alphanumeric (exclude markdown delimiters *, _, `, ~)
+    text = re.sub(r"([،؛؟!:])(?=[^\s\d،؛؟!:.\)\]\}»\"'\/*_`~])", r"\1 ", text)
     # Collapse multiple spaces (preserve newlines)
     text = re.sub(r"[ \t]{2,}", " ", text)
     return text
@@ -255,6 +254,46 @@ def normalize_persian_prose(text: str) -> str:
     return text
 
 
+def normalize_markdown_emphasis(text: str) -> str:
+    """Normalizes Markdown bold (**...**) and italic (__...__) delimiters with misplaced whitespace.
+    Moves leading/trailing whitespace inside bold/italic tags outside, collapses multiple spaces
+    around delimiters, and ensures separator hyphens/dashes have appropriate spacing so CommonMark
+    parsers recognize bold formatting.
+    """
+    if not text:
+        return ""
+
+    def fix_bold(m):
+        inner = m.group(1)
+        if not inner.strip():
+            return m.group(0)
+        leading = " " if inner.startswith(" ") else ""
+        trailing = " " if inner.endswith(" ") else ""
+        return f"{leading}**{inner.strip()}**{trailing}"
+
+    text = re.sub(r"\*\*([^\*\n]+?)\*\*", fix_bold, text)
+
+    def fix_under_bold(m):
+        inner = m.group(1)
+        if not inner.strip():
+            return m.group(0)
+        leading = " " if inner.startswith(" ") else ""
+        trailing = " " if inner.endswith(" ") else ""
+        return f"{leading}__{inner.strip()}__{trailing}"
+
+    text = re.sub(r"(?<!\w)__([^_\n]+?)__(?!\w)", fix_under_bold, text)
+
+    # Collapse double spaces around delimiters
+    text = re.sub(r"\*\*[ \t]+", "** ", text)
+    text = re.sub(r"[ \t]+\*\*", " **", text)
+
+    # Ensure space before separator hyphens/dashes attached to bold
+    text = re.sub(r"\*\*([^\*\n]+?)\*\*([–—-])(?=\s|[\u0600-\u06FF])", r"**\1** \2", text)
+    text = re.sub(r"\*\*([^\*\n]+?)\*\*\s+([–—-])(?=[\u0600-\u06FF])", r"**\1** \2 ", text)
+
+    return text
+
+
 def clean_markdown_persian(text: str) -> str:
     """Markdown-safe Persian text normalization.
     
@@ -265,6 +304,8 @@ def clean_markdown_persian(text: str) -> str:
     if not text or not isinstance(text, str):
         return text
 
+    # 0. Normalize Markdown emphasis delimiters with spaces inside (e.g. "**foo: **" -> "**foo:** ")
+    text = normalize_markdown_emphasis(text)
     protected_tokens: dict[str, str] = {}
     counter = 0
 
