@@ -1,6 +1,8 @@
 """Database initialization and session management."""
 from sqlmodel import SQLModel, create_engine, Session, select, text
+import json
 from typing import Generator
+from pdf_translator.application.persian_cleanup import clean_markdown_persian
 from pdf_translator.config import settings
 from pdf_translator.domain.entities import (
     DEFAULT_SYSTEM_PROMPT,
@@ -212,6 +214,29 @@ def init_db():
             s.progress_message = "پردازش با ری‌استارت سرور متوقف شد."
             s.error_message = "پردازش با ری‌استارت سرور متوقف شد. لطفاً دکمه تلاش مجدد را بزنید."
             session.add(s)
+
+        # Normalize existing chapter summaries chunk_notes_json with proper markdown emphasis
+        try:
+            all_summaries = session.exec(select(ChapterSummary)).all()
+            for cs in all_summaries:
+                if cs.chunk_notes_json:
+                    try:
+                        notes_data = json.loads(cs.chunk_notes_json)
+                        changed = False
+                        for n in notes_data:
+                            old_n = n.get("note", "")
+                            if old_n:
+                                new_n = clean_markdown_persian(old_n)
+                                if new_n != old_n:
+                                    n["note"] = new_n
+                                    changed = True
+                        if changed:
+                            cs.chunk_notes_json = json.dumps(notes_data, ensure_ascii=False)
+                            session.add(cs)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         session.commit()
 
 def get_session() -> Generator[Session, None, None]:

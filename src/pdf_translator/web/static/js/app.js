@@ -393,6 +393,77 @@ window.setReaderTheme = setReaderTheme;
 window.cycleReaderTheme = cycleReaderTheme;
 window.applyReaderTheme = applyReaderTheme;
 
+window.normalizeMarkdownEmphasis = function(text) {
+  if (!text) return '';
+
+  // 1. Asterisk bold (**...**) with single-pass contextual spacing
+  let clean = text.replace(/\*\*([^\*\n]+?)\*\*(\u200c?)/g, (match, inner, trailingZwnj, offset, fullStr) => {
+    if (!inner.trim()) return match;
+
+    const hasLeadingSpace = inner.startsWith(' ') || inner.startsWith('\t');
+    const hasTrailingSpace = inner.endsWith(' ') || inner.endsWith('\t');
+    let stripped = inner.trim();
+
+    // Clean space before colon inside bold: "Title :" -> "Title:"
+    stripped = stripped.replace(/[ \t]+:/g, ':');
+
+    const nextChar = fullStr.charAt(offset + match.length);
+    const nextIsWord = /[\u0600-\u06FF\w]/.test(nextChar);
+    const nextIsHyphen = /[–—-]/.test(nextChar);
+
+    // If bold ends with colon e.g. "**Title:**" or had trailing space or is followed by word/ZWNJ
+    const needsSpaceAfter = hasTrailingSpace || Boolean(trailingZwnj) || (stripped.endsWith(':') && nextIsWord);
+
+    const leading = hasLeadingSpace ? ' ' : '';
+    let trailing = '';
+    if (needsSpaceAfter) {
+      if (!/[\s]/.test(nextChar)) {
+        trailing = ' ';
+      }
+    } else if (nextIsHyphen) {
+      trailing = ' ';
+    }
+
+    return `${leading}**${stripped}**${trailing}`;
+  });
+
+  // 2. Underscore bold/italic (__...__) with single-pass contextual spacing
+  clean = clean.replace(/(?:^|[^\w])__([^_\n]+?)__(\u200c?)(?=[^\w]|$)/g, (match, inner, trailingZwnj, offset, fullStr) => {
+    if (!inner.trim()) return match;
+
+    const hasLeadingSpace = inner.startsWith(' ') || inner.startsWith('\t');
+    const hasTrailingSpace = inner.endsWith(' ') || inner.endsWith('\t');
+    let stripped = inner.trim();
+    stripped = stripped.replace(/[ \t]+:/g, ':');
+
+    const nextChar = fullStr.charAt(offset + match.length);
+    const nextIsWord = /[\u0600-\u06FF\w]/.test(nextChar);
+    const nextIsHyphen = /[–—-]/.test(nextChar);
+
+    const needsSpaceAfter = hasTrailingSpace || Boolean(trailingZwnj) || (stripped.endsWith(':') && nextIsWord);
+
+    const leading = hasLeadingSpace ? ' ' : '';
+    let trailing = '';
+    if (needsSpaceAfter) {
+      if (!/[\s]/.test(nextChar)) {
+        trailing = ' ';
+      }
+    } else if (nextIsHyphen) {
+      trailing = ' ';
+    }
+
+    return `${leading}__${stripped}__${trailing}`;
+  });
+
+  // 3. Ensure space after separator hyphens attached to bold
+  clean = clean.replace(/\*\*([^\*\n]+?)\*\*\s*([–—-])(?=[\u0600-\u06FF\w])/g, '**$1** $2 ');
+
+  // 4. Clean list item spacing e.g. "-  **" -> "- **"
+  clean = clean.replace(/^([ \t]*[-*+])[ \t]+/gm, '$1 ');
+
+  return clean;
+};
+
 // --- Universal KaTeX-Protected Markdown Renderer ---
 window.renderMarkdownWithKatex = function(text) {
   if (!text) return '';
@@ -431,26 +502,8 @@ window.renderMarkdownWithKatex = function(text) {
     return `MATHINLINETOKEN${idx}XYZ`;
   });
   // 3.5 Sanitize Markdown bold/italic delimiters with trailing or leading whitespace
-  // e.g. "**Star Schema **- " -> "**Star Schema** - "
-  clean = clean.replace(/\*\*([^\*\n]+?)\*\*/g, (match, inner) => {
-    if (!inner.trim()) return match;
-    const leading = inner.startsWith(' ') ? ' ' : '';
-    const trailing = inner.endsWith(' ') ? ' ' : '';
-    return `${leading}**${inner.trim()}**${trailing}`;
-  });
-
-  clean = clean.replace(/(?:^|[^\w])__([^_\n]+?)__(?=[^\w]|$)/g, (match, inner) => {
-    if (!inner.trim()) return match;
-    const leading = inner.startsWith(' ') ? ' ' : '';
-    const trailing = inner.endsWith(' ') ? ' ' : '';
-    return `${leading}__${inner.trim()}__${trailing}`;
-  });
-
-  clean = clean.replace(/\*\*[ \t]+/g, '** ');
-  clean = clean.replace(/[ \t]+\*\*/g, ' **');
-
-  clean = clean.replace(/\*\*([^\*\n]+?)\*\*([–—-])(?=\s|[\u0600-\u06FF])/g, '**$1** $2');
-  clean = clean.replace(/\*\*([^\*\n]+?)\*\*\s+([–—-])(?=[\u0600-\u06FF])/g, '**$1** $2 ');
+  // e.g. "**Star Schema **- " -> "**Star Schema** - ", "**Title: **داده" -> "**Title:** داده"
+  clean = window.normalizeMarkdownEmphasis ? window.normalizeMarkdownEmphasis(clean) : clean;
   // 4. Parse Markdown with marked
   let html = window.marked ? marked.parse(clean) : clean;
 

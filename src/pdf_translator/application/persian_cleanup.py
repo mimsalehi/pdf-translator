@@ -256,43 +256,89 @@ def normalize_persian_prose(text: str) -> str:
 
 def normalize_markdown_emphasis(text: str) -> str:
     """Normalizes Markdown bold (**...**) and italic (__...__) delimiters with misplaced whitespace.
-    Moves leading/trailing whitespace inside bold/italic tags outside, collapses multiple spaces
-    around delimiters, and ensures separator hyphens/dashes have appropriate spacing so CommonMark
-    parsers recognize bold formatting.
+    Moves leading/trailing whitespace inside bold/italic tags outside, cleans spaces before colons,
+    and ensures closing tags preceding words or with trailing colons/hyphens have proper spacing
+    so CommonMark parsers recognize bold formatting.
     """
-    if not text:
+    if not text or not isinstance(text, str):
         return ""
 
-    def fix_bold(m):
+    # 1. Asterisk bold (**...**)
+    def fix_bold(m: re.Match) -> str:
         inner = m.group(1)
+        trailing_zwnj = m.group(2)
+        offset = m.start()
+        match_len = len(m.group(0))
+
         if not inner.strip():
             return m.group(0)
-        leading = " " if inner.startswith(" ") else ""
-        trailing = " " if inner.endswith(" ") else ""
-        return f"{leading}**{inner.strip()}**{trailing}"
 
-    text = re.sub(r"\*\*([^\*\n]+?)\*\*", fix_bold, text)
+        has_leading_space = inner.startswith(" ") or inner.startswith("\t")
+        has_trailing_space = inner.endswith(" ") or inner.endswith("\t")
+        stripped = inner.strip()
 
-    def fix_under_bold(m):
+        # Clean space before colon: "Title :" -> "Title:"
+        stripped = re.sub(r"[ \t]+:", ":", stripped)
+
+        next_char = text[offset + match_len] if (offset + match_len) < len(text) else ""
+        next_is_word = bool(re.match(r"[\u0600-\u06FF\w]", next_char))
+        next_is_hyphen = bool(re.match(r"[–—-]", next_char))
+
+        # If bold ends with colon e.g. "**Title:**" or had trailing space or is followed by word/ZWNJ
+        needs_space_after = has_trailing_space or bool(trailing_zwnj) or (stripped.endswith(":") and next_is_word)
+
+        leading = " " if has_leading_space else ""
+        trailing = ""
+        if needs_space_after:
+            if not (next_char and next_char.isspace()):
+                trailing = " "
+        elif next_is_hyphen:
+            trailing = " "
+
+        return f"{leading}**{stripped}**{trailing}"
+
+    text = re.sub(r"\*\*([^\*\n]+?)\*\*(\u200c?)", fix_bold, text)
+
+    # 2. Underscore bold/italic (__...__)
+    def fix_under_bold(m: re.Match) -> str:
         inner = m.group(1)
+        trailing_zwnj = m.group(2)
+        offset = m.start()
+        match_len = len(m.group(0))
+
         if not inner.strip():
             return m.group(0)
-        leading = " " if inner.startswith(" ") else ""
-        trailing = " " if inner.endswith(" ") else ""
-        return f"{leading}__{inner.strip()}__{trailing}"
 
-    text = re.sub(r"(?<!\w)__([^_\n]+?)__(?!\w)", fix_under_bold, text)
+        has_leading_space = inner.startswith(" ") or inner.startswith("\t")
+        has_trailing_space = inner.endswith(" ") or inner.endswith("\t")
+        stripped = inner.strip()
+        stripped = re.sub(r"[ \t]+:", ":", stripped)
 
-    # Collapse double spaces around delimiters
-    text = re.sub(r"\*\*[ \t]+", "** ", text)
-    text = re.sub(r"[ \t]+\*\*", " **", text)
+        next_char = text[offset + match_len] if (offset + match_len) < len(text) else ""
+        next_is_word = bool(re.match(r"[\u0600-\u06FF\w]", next_char))
+        next_is_hyphen = bool(re.match(r"[–—-]", next_char))
 
-    # Ensure space before separator hyphens/dashes attached to bold
-    text = re.sub(r"\*\*([^\*\n]+?)\*\*([–—-])(?=\s|[\u0600-\u06FF])", r"**\1** \2", text)
-    text = re.sub(r"\*\*([^\*\n]+?)\*\*\s+([–—-])(?=[\u0600-\u06FF])", r"**\1** \2 ", text)
+        needs_space_after = has_trailing_space or bool(trailing_zwnj) or (stripped.endswith(":") and next_is_word)
+
+        leading = " " if has_leading_space else ""
+        trailing = ""
+        if needs_space_after:
+            if not (next_char and next_char.isspace()):
+                trailing = " "
+        elif next_is_hyphen:
+            trailing = " "
+
+        return f"{leading}__{stripped}__{trailing}"
+
+    text = re.sub(r"(?<!\w)__([^_\n]+?)__(\u200c?)(?!\w)", fix_under_bold, text)
+
+    # 3. Ensure space after separator hyphens attached to bold
+    text = re.sub(r"\*\*([^\*\n]+?)\*\*\s*([–—-])(?=[\u0600-\u06FF\w])", r"**\1** \2 ", text)
+
+    # 4. Clean list item spacing e.g. "-  **" -> "- **"
+    text = re.sub(r"(?m)^([ \t]*[-*+])[ \t]+", r"\1 ", text)
 
     return text
-
 
 def clean_markdown_persian(text: str) -> str:
     """Markdown-safe Persian text normalization.
@@ -363,4 +409,6 @@ def clean_markdown_persian(text: str) -> str:
     for token, original in protected_tokens.items():
         text = text.replace(token, original)
 
+    # 12. Final pass: ensure Markdown emphasis remains clean after prose punctuation fixes
+    text = normalize_markdown_emphasis(text)
     return text

@@ -194,3 +194,34 @@ def test_clean_markdown_persian_normalizes_consecutive_bold_items_with_hyphens()
     assert "**Snowflake Schema **" not in cleaned
     assert "**Dimensional Modeling **" not in cleaned
     assert "**One Big Table (OBT) **" not in cleaned
+
+def test_clean_markdown_persian_user_log_structured_storage_case():
+    """Verifies user-reported issue where bold terms with trailing spaces and colons before words
+    are correctly normalized with valid CommonMark spacing so they render as bold HTML.
+    """
+    raw = "**Log-Structured Storage Engines: **داده را در فایل‌های تغییرناپذیر (Immutable Data Files) و معمولاً به‌صورت Append-only می‌نویسند."
+    cleaned = clean_markdown_persian(raw)
+    assert "**Log-Structured Storage Engines:** داده را" in cleaned
+    assert ": **" not in cleaned
+
+def test_clean_markdown_persian_normalizes_bold_without_space_after_colon():
+    """Verifies that closing bold tags followed directly by word characters or ZWNJ without spaces are given a space."""
+    raw1 = "**Log-Structured Storage Engines:**داده را ذخیره می‌کند"
+    cleaned1 = clean_markdown_persian(raw1)
+    assert "**Log-Structured Storage Engines:** داده را" in cleaned1
+
+    raw2 = "**Log-Structured Storage Engines:**‌داده را ذخیره می‌کند"
+    cleaned2 = clean_markdown_persian(raw2)
+    assert "**Log-Structured Storage Engines:** داده را" in cleaned2
+
+def test_clean_markdown_persian_multiple_bold_on_single_line_does_not_corrupt_delimiters():
+    """Verifies that multiple bold items on a single line are independently preserved and do not leak spaces into each other."""
+    raw = "- **Log-Structured Storage Engines:** داده را در فایل‌های تغییرناپذیر (**Immutable Data Files**) و معمولاً به‌صورت Append-only می‌نویسند."
+    cleaned = clean_markdown_persian(raw)
+    assert "- **Log-Structured Storage Engines:** داده را در فایل‌های تغییرناپذیر (**Immutable Data Files**) و معمولاً به‌صورت Append-only می‌نویسند." == cleaned
+
+def test_clean_markdown_persian_normalizes_internal_space_before_colon():
+    """Verifies that space before colon inside bold delimiters (**Title : **) is cleaned up."""
+    raw = "**Log-Structured Storage Engines : **داده"
+    cleaned = clean_markdown_persian(raw)
+    assert "**Log-Structured Storage Engines:** داده" in cleaned

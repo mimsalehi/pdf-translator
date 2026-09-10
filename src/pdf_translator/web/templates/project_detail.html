@@ -594,7 +594,8 @@
             try {
               const parsedNotes = JSON.parse(ch.chunk_notes_json);
               if (parsedNotes.length > 0 && parsedNotes[0].note) {
-                previewText = parsedNotes[0].note.substring(0, 150) + '...';
+                const cleanPlain = parsedNotes[0].note.replace(/\*\*/g, '').replace(/`+/g, '').replace(/^[ \t]*[-*+][ \t]*/gm, '').trim();
+                previewText = escapeHtml(cleanPlain.substring(0, 150)) + '...';
               }
             } catch(e) {}
           }
