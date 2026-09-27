@@ -506,6 +506,73 @@ class BrowserManager:
         """Forces the next translation to start a fresh chat thread."""
         self._reset_thread_flags[provider_key] = True
 
+    def _default_context_or_none(self) -> Optional[BrowserContext]:
+        if self._browser is None or not self._browser.is_connected() or not self._browser.contexts:
+            return None
+        return self._browser.contexts[0]
+
+    async def render_page_html(self, url: str, timeout_ms: int = 45000) -> Tuple[str, str]:
+        """
+        Loads `url` in a temporary tab of the operator's Chrome (real cookies, JavaScript and
+        bot-check clearance) and returns (rendered_html, final_url). Used when plain HTTP is
+        blocked or the page is rendered client-side.
+        """
+        async with self._global_connect_lock:
+            await self._ensure_cdp_connected(url)
+        context = self._browser.contexts[0] if self._browser.contexts else await self._browser.new_context()
+        page = await context.new_page()
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            # Give interstitial bot checks (Cloudflare "Just a moment...") time to clear; the tab is
+            # visible, so the operator can also solve an interactive challenge meanwhile.
+            challenge = re.compile(r"just a moment|checking your browser|attention required|verify you are human")
+            for _ in range(90):
+                if not challenge.search((await page.title()).lower()):
+                    break
+                await asyncio.sleep(0.5)
+            else:
+                raise RuntimeError(
+                    "The site's bot check did not complete within 45 seconds. "
+                    "Open the URL once in this Chrome, pass the check, then retry."
+                )
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+            except Exception:
+                pass
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10000)
+            except Exception:
+                pass
+            # Scroll through the page so lazy-loaded images receive their real sources.
+            await page.evaluate("""async () => {
+                const step = Math.max(400, window.innerHeight);
+                for (let y = 0; y < document.body.scrollHeight && y < 60000; y += step) {
+                    window.scrollTo(0, y);
+                    await new Promise(r => setTimeout(r, 120));
+                }
+                window.scrollTo(0, 0);
+            }""")
+            return await page.content(), page.url
+        finally:
+            try:
+                await page.close()
+            except Exception:
+                pass
+
+    async def fetch_resource(self, url: str, referer: str, max_bytes: int) -> Optional[bytes]:
+        """Downloads a resource through the already-connected Chrome context (shares its cookies)."""
+        context = self._default_context_or_none()
+        if context is None:
+            return None
+        try:
+            response = await context.request.get(url, headers={"Referer": referer}, timeout=30000)
+            if not response.ok:
+                return None
+            body = await response.body()
+        except Exception:
+            return None
+        return body if len(body) <= max_bytes else None
+
     async def _start_fresh_chat(self, page: PlaywrightPage, default_url: str = "https://chatgpt.com"):
         """Opens a clean new chat conversation in the current tab to avoid context bloat or stuck threads."""
         try:

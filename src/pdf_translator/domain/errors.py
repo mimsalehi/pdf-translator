@@ -30,3 +30,9 @@ class TranslationProviderError(DomainError):
 class ExportError(DomainError):
     def __init__(self, details: str):
         super().__init__(f"Export failed: {details}")
+
+class ArticleFetchError(DomainError):
+    def __init__(self, url: str, details: str):
+        self.url = url
+        self.details = details
+        super().__init__(f"Could not fetch article from '{url}': {details}")

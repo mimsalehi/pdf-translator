@@ -11,7 +11,11 @@
     <div>
       <span style="font-weight: 700; font-size: 1.15rem;">{{ page.project_title }}</span>
       <span style="color: var(--color-text-muted); margin: 0 0.5rem;">/</span>
+      {% if page.source_type == 'ARTICLE' %}
+      <span style="font-weight: 600; color: var(--color-primary);">🌐 Web Article</span>
+      {% else %}
       <span style="font-weight: 600; color: var(--color-primary);">Page {{ page.page_number }} of {{ page.total_pages }}</span>
+      {% endif %}
     </div>
   </div>
 
@@ -52,8 +56,22 @@
 <!-- Main Workspace: 2-Pane Side-by-Side -->
 <div class="workspace-container">
   
-  <!-- Left Pane: PDF Page High-Res Image -->
+  <!-- Left Pane: PDF Page High-Res Image, or the original web article -->
   <div class="workspace-pane">
+    {% if page.source_type == 'ARTICLE' %}
+    <div class="pane-header">
+      <div class="pane-title">
+        <span>🌐</span> Original Article
+      </div>
+      <a href="{{ page.source_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-sm">Open Source ↗</a>
+    </div>
+    <div class="pane-body pdf-preview-box">
+      <div style="width: 100%; max-width: 860px;">
+        <a href="{{ page.source_url }}" target="_blank" rel="noopener noreferrer" class="article-source-link">{{ page.source_url }}</a>
+        <div id="article-source-view" class="article-source-view markdown-content"></div>
+      </div>
+    </div>
+    {% else %}
     <div class="pane-header">
       <div class="pane-title">
         <span>📄</span> Original PDF Page Visual
@@ -67,6 +85,7 @@
     <div class="pane-body pdf-preview-box" id="pdf-container">
       <img src="{{ page.image_url }}" alt="Page {{ page.page_number }}" id="pdf-image" class="pdf-page-image">
     </div>
+    {% endif %}
   </div>
 
   <!-- Right Pane: HITL Workflow (Extracted Source & Translation) -->
@@ -88,7 +107,7 @@
     <!-- Tab 1: Source Text Inspection -->
     <div class="pane-body" id="tab-source-content" style="display: flex; flex-direction: column; gap: 1rem;">
       <div style="font-size: 0.85rem; color: var(--color-text-muted); background: var(--color-surface-subtle); padding: 0.6rem 0.85rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border-subtle);">
-        💡 <strong>Operator Pre-Check:</strong> Review the extracted text from the PDF. Edit any scanning/formatting glitches if necessary, then click <em>Approve for AI Translation</em>.
+        💡 <strong>Operator Pre-Check:</strong> Review the extracted text from the {{ 'article' if page.source_type == 'ARTICLE' else 'PDF' }}. Edit any extraction/formatting glitches if necessary, then click <em>Approve for AI Translation</em>.
       </div>
       <textarea id="source-text-input" class="text-editor-textarea" placeholder="Extracted source text will appear here...">{{ page.source_text }}</textarea>
     </div>
@@ -139,9 +158,15 @@
           <button class="btn btn-secondary" onclick="saveSourceText()">
             Save Source Text
           </button>
+          {% if page.source_type == 'ARTICLE' %}
+          <button class="btn btn-secondary btn-sm" onclick="reExtractSourceText()" title="Download the article and its images again from the source URL">
+            🔄 Re-fetch from URL
+          </button>
+          {% else %}
           <button class="btn btn-secondary btn-sm" onclick="reExtractSourceText()" title="Re-extract and reconstruct continuous paragraphs from PDF">
             🔄 Re-extract from PDF
           </button>
+          {% endif %}
         </div>
         <button class="btn btn-primary" id="approve-trans-btn" onclick="approveForTranslation()">
           ✅ Approve for AI Translation
@@ -352,6 +377,15 @@
     }
   }
 
+  function renderArticleSource() {
+    const view = document.getElementById('article-source-view');
+    if (!view) return;
+    const text = document.getElementById('source-text-input').value;
+    view.innerHTML = window.renderMarkdownWithKatex ? renderMarkdownWithKatex(text) : (window.marked ? marked.parse(text) : text);
+    if (window.enhanceCodeBlocks) window.enhanceCodeBlocks(view);
+  }
+  document.addEventListener('DOMContentLoaded', renderArticleSource);
+
   async function reExtractSourceText() {
     const indicator = document.getElementById('save-status-indicator');
     indicator.textContent = 'Extracting and reconstructing paragraphs...';
@@ -362,8 +396,11 @@
       const data = await res.json();
       if (res.ok && data.success) {
         document.getElementById('source-text-input').value = data.source_text;
+        renderArticleSource();
         indicator.textContent = 'Re-extracted continuous paragraphs!';
         setTimeout(() => indicator.textContent = '', 2500);
+      } else {
+        indicator.textContent = data.detail || 'Re-extraction failed.';
       }
     } catch (err) {
       indicator.textContent = 'Re-extraction failed.';
@@ -381,6 +418,7 @@
         body: JSON.stringify({ source_text: text })
       });
       if (res.ok) {
+        renderArticleSource();
         indicator.textContent = 'Source text saved.';
         setTimeout(() => indicator.textContent = '', 2500);
       }

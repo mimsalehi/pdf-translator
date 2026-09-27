@@ -3,9 +3,9 @@ from pathlib import Path
 from typing import Optional, List
 from datetime import datetime
 from pdf_translator.domain.entities import Project, Page, TranslationAttempt
-from pdf_translator.domain.enums import PageStatus
+from pdf_translator.domain.enums import PageStatus, SourceType
 from pdf_translator.domain.errors import PageNotFoundError, ProjectNotFoundError, InvalidStateTransitionError
-from pdf_translator.domain.ports import PageRepositoryPort, ProjectRepositoryPort, PDFExtractorPort
+from pdf_translator.domain.ports import PageRepositoryPort, ProjectRepositoryPort, PDFExtractorPort, ArticleFetcherPort
 from pdf_translator.application.dtos import PageDetailDTO
 
 class PageService:
@@ -14,10 +14,12 @@ class PageService:
         page_repo: PageRepositoryPort,
         project_repo: ProjectRepositoryPort,
         pdf_extractor: Optional[PDFExtractorPort] = None,
+        article_fetcher: Optional[ArticleFetcherPort] = None,
     ):
         self.page_repo = page_repo
         self.project_repo = project_repo
         self.pdf_extractor = pdf_extractor
+        self.article_fetcher = article_fetcher
 
     def _extract_page_with_stitching(self, project: Project, page_number: int) -> str:
         """Extracts page text and embedded diagrams with cross-page sentence stitching."""
@@ -57,6 +59,25 @@ class PageService:
             curr_text = stitched_pair[0]
 
         return curr_text
+
+    async def re_extract_source_text(self, project_id: str, page_number: int) -> Page:
+        """Rebuilds a page's source text from its origin: the stored PDF, or the article URL (re-downloaded)."""
+        project = self.project_repo.get_by_id(project_id)
+        if not project:
+            raise ProjectNotFoundError(project_id)
+
+        if project.source_type == SourceType.ARTICLE:
+            if self.article_fetcher is None:
+                raise ValueError("No article fetcher is configured.")
+            article = await self.article_fetcher.fetch_article(
+                project.source_url, project.id, Path(project.storage_dir) / "images"
+            )
+            clean_text = article.markdown
+        else:
+            if not self.pdf_extractor or not project.source_pdf_path or not Path(project.source_pdf_path).exists():
+                raise FileNotFoundError("Source PDF not found.")
+            clean_text = self._extract_page_with_stitching(project, page_number)
+        return self.update_source_text(project_id, page_number, clean_text)
 
     def get_page_detail(self, project_id: str, page_number: int) -> PageDetailDTO:
         project = self.project_repo.get_by_id(project_id)
@@ -100,6 +121,8 @@ class PageService:
             project_title=project.title,
             page_number=page.page_number,
             total_pages=project.total_pages,
+            source_type=project.source_type,
+            source_url=project.source_url,
             status=page.status,
             source_text=page.source_text,
             image_url=f"/api/projects/{project.id}/pages/{page.page_number}/image",

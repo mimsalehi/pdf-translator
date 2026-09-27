@@ -1,5 +1,6 @@
 """Domain ports (interfaces) for PDF Book Translator."""
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import List, Optional
 from pathlib import Path
 from pdf_translator.domain.entities import Project, Page, TranslationProfile, TranslationAttempt, GlossaryItem
@@ -31,6 +32,26 @@ class PDFExtractorPort(ABC):
     @abstractmethod
     def render_thumbnail(self, pdf_path: Path, page_number: int, output_image_path: Path, max_width: int = 300) -> Path:
         """Renders a thumbnail image of the page."""
+        pass
+
+
+@dataclass(frozen=True)
+class FetchedArticle:
+    """Main content of a web article converted to Markdown, with images stored locally."""
+    title: str
+    markdown: str
+    final_url: str
+    image_count: int
+
+
+class ArticleFetcherPort(ABC):
+    """Port for downloading a web article and converting it into a single Markdown page."""
+
+    @abstractmethod
+    async def fetch_article(self, url: str, project_id: str, images_dir: Path) -> FetchedArticle:
+        """Fetches the article at `url`, saves its images into `images_dir` as
+        `page_1_img_{i}.png`, and returns Markdown referencing them through the
+        project's embedded-image route. Raises ArticleFetchError on failure."""
         pass
 
 

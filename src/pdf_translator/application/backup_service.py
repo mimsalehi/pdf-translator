@@ -188,9 +188,9 @@ class BackupService:
                 new_source_pdf = (new_project_dir / "source.pdf").resolve()
                 new_pages_dir = (new_project_dir / "pages").resolve()
 
-                # Update project paths
+                # Update project paths (article projects have no source PDF)
                 c.execute(
-                    "UPDATE projects SET storage_dir = ?, source_pdf_path = ? WHERE id = ?",
+                    "UPDATE projects SET storage_dir = ?, source_pdf_path = CASE WHEN source_pdf_path = '' THEN '' ELSE ? END WHERE id = ?",
                     (str(new_project_dir), str(new_source_pdf), project_id),
                 )
 

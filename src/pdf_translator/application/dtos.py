@@ -2,12 +2,19 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-from pdf_translator.domain.enums import PageStatus, ProviderType
+from pdf_translator.domain.enums import PageStatus, ProviderType, SourceType
 
 class ProjectCreateDTO(BaseModel):
     title: str
     source_pdf_path: str
     original_filename: str
+    source_language: str = "English"
+    target_language: str = "Persian"
+    profile_id: Optional[str] = None
+
+class ArticleProjectCreateDTO(BaseModel):
+    url: str
+    title: str = ""
     source_language: str = "English"
     target_language: str = "Persian"
     profile_id: Optional[str] = None
@@ -25,6 +32,8 @@ class ProjectDetailDTO(BaseModel):
     id: str
     title: str
     source_pdf_filename: str
+    source_type: SourceType = SourceType.PDF
+    source_url: Optional[str] = None
     total_pages: int
     source_language: str
     target_language: str
@@ -45,6 +54,8 @@ class ProjectListItemDTO(BaseModel):
     id: str
     title: str
     source_pdf_filename: str
+    source_type: SourceType = SourceType.PDF
+    source_url: Optional[str] = None
     total_pages: int
     source_language: str
     target_language: str
@@ -58,6 +69,8 @@ class PageDetailDTO(BaseModel):
     project_title: str
     page_number: int
     total_pages: int
+    source_type: SourceType = SourceType.PDF
+    source_url: Optional[str] = None
     status: PageStatus
     source_text: str
     image_url: str

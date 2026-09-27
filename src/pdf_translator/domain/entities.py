@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import uuid4
 from sqlmodel import SQLModel, Field, Relationship
-from pdf_translator.domain.enums import PageStatus, ProviderType
+from pdf_translator.domain.enums import PageStatus, ProviderType, SourceType
 
 def default_uuid() -> str:
     return str(uuid4())
@@ -90,6 +90,8 @@ class Project(SQLModel, table=True):
     source_pdf_filename: str
     source_pdf_path: str
     storage_dir: str
+    source_type: SourceType = Field(default=SourceType.PDF)
+    source_url: Optional[str] = Field(default=None)
     total_pages: int = Field(default=0)
     source_language: str = Field(default="English")
     target_language: str = Field(default="Persian")

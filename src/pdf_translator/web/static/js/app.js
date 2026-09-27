@@ -53,46 +53,71 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Handle New Project Form Submission
+  // Handle New Project Form Submission (PDF upload or web article URL)
   const newProjectForm = document.getElementById('new-project-form');
   if (newProjectForm) {
     newProjectForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const submitBtn = document.getElementById('submit-project-btn');
       const errorBox = document.getElementById('project-form-error');
-      
-      if (!fileInput || !fileInput.files.length) {
+      const isArticle = document.getElementById('project-source-type').value === 'article';
+      const articleUrl = (document.getElementById('article-url-input').value || '').trim();
+
+      const showError = (message) => {
         if (errorBox) {
-          errorBox.textContent = 'Please select a PDF file.';
+          errorBox.textContent = message;
           errorBox.style.display = 'block';
         }
+      };
+
+      if (isArticle && !/^https?:\/\/\S+$/i.test(articleUrl)) {
+        showError('Please enter a valid http(s) article URL.');
+        return;
+      }
+      if (!isArticle && (!fileInput || !fileInput.files.length)) {
+        showError('Please select a PDF file.');
         return;
       }
 
-      const formData = new FormData(newProjectForm);
       if (submitBtn) {
         submitBtn.disabled = true;
-        submitBtn.textContent = 'Processing PDF & Extracting Pages...';
+        submitBtn.textContent = isArticle
+          ? 'Downloading article & images...'
+          : 'Processing PDF & Extracting Pages...';
       }
       if (errorBox) errorBox.style.display = 'none';
 
       try {
-        const response = await fetch('/api/projects', {
-          method: 'POST',
-          body: formData
-        });
+        let response;
+        if (isArticle) {
+          const formData = new FormData(newProjectForm);
+          response = await fetch('/api/projects/article', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: articleUrl,
+              title: formData.get('title') || '',
+              source_language: formData.get('source_language'),
+              target_language: formData.get('target_language'),
+            })
+          });
+        } else {
+          response = await fetch('/api/projects', {
+            method: 'POST',
+            body: new FormData(newProjectForm)
+          });
+        }
 
         const data = await response.json();
         if (response.ok && data.success) {
-          window.location.href = `/projects/${data.project_id}`;
+          window.location.href = isArticle
+            ? `/projects/${data.project_id}/pages/1`
+            : `/projects/${data.project_id}`;
         } else {
           throw new Error(data.detail || 'Failed to create project.');
         }
       } catch (err) {
-        if (errorBox) {
-          errorBox.textContent = err.message;
-          errorBox.style.display = 'block';
-        }
+        showError(err.message);
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.textContent = 'Create Project';
@@ -101,6 +126,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+function setProjectSourceType(type) {
+  const isArticle = type === 'article';
+  document.getElementById('project-source-type').value = type;
+  document.getElementById('pdf-source-group').style.display = isArticle ? 'none' : 'block';
+  document.getElementById('article-source-group').style.display = isArticle ? 'block' : 'none';
+  document.getElementById('source-type-pdf-btn').className = `btn ${isArticle ? 'btn-secondary' : 'btn-primary'}`;
+  document.getElementById('source-type-article-btn').className = `btn ${isArticle ? 'btn-primary' : 'btn-secondary'}`;
+  const titleInput = document.getElementById('project-title-input');
+  if (titleInput) titleInput.placeholder = isArticle ? 'Defaults to the article headline' : 'e.g. Domain-Driven Design';
+  if (isArticle) document.getElementById('article-url-input').focus();
+}
+window.setProjectSourceType = setProjectSourceType;
 
 // --- Modern Code Block Beautifier & Syntax Highlighting ---
 function enhanceCodeBlocks(container) {

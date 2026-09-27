@@ -69,7 +69,11 @@
     {% for page in translated_pages %}
       <div style="margin-bottom: 3.5rem;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; color: var(--reader-text-muted); font-size: 0.88rem; border-bottom: 1px dashed var(--reader-border-subtle); padding-bottom: 0.35rem;">
+          {% if project.source_type == 'ARTICLE' %}
+          <a href="{{ project.source_url }}" target="_blank" rel="noopener noreferrer" dir="ltr" style="font-weight: 700; color: var(--reader-accent); text-decoration: none;">🌐 منبع مقاله ↗</a>
+          {% else %}
           <span style="font-weight: 700; color: var(--reader-accent);">صفحه {{ page.page_number }}</span>
+          {% endif %}
           <a href="/projects/{{ project.id }}/pages/{{ page.page_number }}" style="color: var(--reader-link); text-decoration: none; font-size: 0.82rem;">
             ✏️ ویرایش در Workspace ↗
           </a>

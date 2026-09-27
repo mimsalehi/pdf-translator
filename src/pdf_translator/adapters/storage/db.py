@@ -36,11 +36,17 @@ def init_db():
     eng = get_engine()
     SQLModel.metadata.create_all(eng)
     with eng.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE chapter_summaries ADD COLUMN intermediate_summaries_json TEXT"))
-            conn.commit()
-        except Exception:
-            pass
+        migrations = [
+            "ALTER TABLE chapter_summaries ADD COLUMN intermediate_summaries_json TEXT",
+            "ALTER TABLE projects ADD COLUMN source_type VARCHAR(7) NOT NULL DEFAULT 'PDF'",
+            "ALTER TABLE projects ADD COLUMN source_url VARCHAR",
+        ]
+        for statement in migrations:
+            try:
+                conn.execute(text(statement))
+                conn.commit()
+            except Exception:
+                conn.rollback()
 
     with Session(eng) as session:
         # Default Translation Profile

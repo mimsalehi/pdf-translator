@@ -4,7 +4,7 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Translation Projects</h1>
-    <p class="page-subtitle">Local-first, page-by-page Human-in-the-Loop book translation</p>
+    <p class="page-subtitle">Local-first, page-by-page Human-in-the-Loop translation of PDF books and web articles</p>
   </div>
   <div>
     <button class="btn btn-primary" onclick="openModal('new-project-modal')">
@@ -27,7 +27,7 @@
         onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';"
       >
       <div class="project-cover-fallback" style="display: none;">
-        <span>📖</span>
+        <span>{% if p.source_type == 'ARTICLE' %}📰{% else %}📖{% endif %}</span>
       </div>
     </div>
 
@@ -41,7 +41,11 @@
           <span class="badge badge-ready">{{ p.source_language }} → {{ p.target_language }}</span>
         </div>
         <div class="project-meta" style="margin-bottom: 1rem;">
+          {% if p.source_type == 'ARTICLE' %}
+          <span title="{{ p.source_url }}">🌐 Web Article</span>
+          {% else %}
           <span>📄 {{ p.total_pages }} Pages</span>
+          {% endif %}
           <span>•</span>
           <span>✅ {{ p.approved_count }} Approved</span>
         </div>
@@ -62,7 +66,7 @@
 {% else %}
 <div class="empty-state">
   <h2 class="empty-state-title">No Projects Found</h2>
-  <p class="empty-state-text">Get started by creating your first PDF book translation project.</p>
+  <p class="empty-state-text">Get started by creating your first PDF book or web article translation project.</p>
   <button class="btn btn-primary" onclick="openModal('new-project-modal')">
     <span>+</span> Create New Project
   </button>
@@ -78,6 +82,15 @@
     </div>
 
     <form id="new-project-form">
+      <input type="hidden" id="project-source-type" value="pdf">
+      <div class="form-group">
+        <label class="form-label">Source</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+          <button type="button" class="btn btn-primary" id="source-type-pdf-btn" onclick="setProjectSourceType('pdf')">📄 PDF File</button>
+          <button type="button" class="btn btn-secondary" id="source-type-article-btn" onclick="setProjectSourceType('article')">🌐 Web Article (URL)</button>
+        </div>
+      </div>
+
       <div class="form-group">
         <label class="form-label" for="project-title-input">Project Title (Optional)</label>
         <input type="text" id="project-title-input" name="title" class="form-control" placeholder="e.g. Domain-Driven Design">
@@ -105,14 +118,23 @@
         </div>
       </div>
 
-      <div class="form-group">
+      <div class="form-group" id="pdf-source-group">
         <label class="form-label">Source PDF File</label>
         <div id="pdf-dropzone" class="dropzone">
           <p style="font-weight: 600; margin-bottom: 0.25rem;">Drag & drop PDF here, or click to browse</p>
           <p style="font-size: 0.8rem; color: var(--color-text-dim);">Pages will be automatically indexed and extracted</p>
-          <input type="file" id="pdf-file-input" name="file" accept=".pdf" style="display: none;" required>
+          <input type="file" id="pdf-file-input" name="file" accept=".pdf" style="display: none;">
         </div>
         <p id="selected-file-info" style="display: none; margin-top: 0.5rem; font-size: 0.85rem; color: var(--color-success); font-weight: 500;"></p>
+      </div>
+
+      <div class="form-group" id="article-source-group" style="display: none;">
+        <label class="form-label" for="article-url-input">Article URL</label>
+        <input type="url" id="article-url-input" class="form-control" placeholder="https://example.com/blog/some-article" dir="ltr">
+        <p style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--color-text-dim);">
+          The full article text and all of its images are downloaded and kept on a single page.
+          Sites that block plain downloads are opened in your Chrome (the same one used for browser AI providers).
+        </p>
       </div>
 
       <div id="project-form-error" style="display: none; color: var(--color-danger); font-size: 0.85rem; margin-bottom: 1rem;"></div>

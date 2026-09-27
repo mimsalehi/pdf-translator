@@ -20,3 +20,7 @@ class ProviderType(str, Enum):
     BROWSER_GEMINI = "browser_gemini"
     BROWSER_CLAUDE = "browser_claude"
     MOCK = "mock"
+
+class SourceType(str, Enum):
+    PDF = "PDF"
+    ARTICLE = "ARTICLE"

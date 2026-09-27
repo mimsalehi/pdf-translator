@@ -7,12 +7,25 @@
       <a href="/" style="color: var(--color-text-muted); text-decoration: none; font-size: 0.9rem;">← All Projects</a>
     </div>
     <h1 class="page-title">{{ project.title }}</h1>
+    {% if project.source_type == 'ARTICLE' %}
+    <p class="page-subtitle">Source: <a href="{{ project.source_url }}" target="_blank" rel="noopener noreferrer" dir="ltr" style="color: var(--color-primary);">{{ project.source_url }}</a> ({{ project.source_language }} → {{ project.target_language }})</p>
+    {% else %}
     <p class="page-subtitle">Source: {{ project.source_pdf_filename }} ({{ project.source_language }} → {{ project.target_language }})</p>
+    {% endif %}
   </div>
     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+      {% if project.source_type == 'ARTICLE' %}
+      <a href="/projects/{{ project.id }}/pages/1" class="btn btn-primary" title="Open the article in the HITL workspace">
+        ✏️ Open Article Workspace
+      </a>
+      <a href="/projects/{{ project.id }}/reader" class="btn btn-secondary" title="Read the whole translated article on one page">
+        📖 Article Reader
+      </a>
+      {% else %}
       <a href="/projects/{{ project.id }}/reader" class="btn btn-secondary" title="Read all translated pages continuously in book reader mode">
         📖 Book Reader Mode
       </a>
+      {% endif %}
       <a href="/api/projects/{{ project.id }}/export?format=docx" class="btn btn-secondary">
         📥 Export DOCX
       </a>
@@ -70,10 +83,11 @@
     {% for page in project.pages %}
     <a href="/projects/{{ project.id }}/pages/{{ page.page_number }}" class="page-card">
       <div class="page-thumbnail-box">
-        <img src="{{ page.thumbnail_url }}" alt="Page {{ page.page_number }}" class="page-thumbnail-img" loading="lazy">
+        <img src="{{ page.thumbnail_url }}" alt="Page {{ page.page_number }}" class="page-thumbnail-img" loading="lazy"
+             onerror="this.replaceWith(Object.assign(document.createElement('span'), {textContent: '📰', style: 'font-size: 3rem;'}))">
       </div>
       <div class="page-card-footer">
-        <span class="page-card-number">Page {{ page.page_number }}</span>
+        <span class="page-card-number">{% if project.source_type == 'ARTICLE' %}Full Article{% else %}Page {{ page.page_number }}{% endif %}</span>
         {% if page.status == 'READY' %}
           <span class="badge badge-ready">READY</span>
         {% elif page.status == 'APPROVED_FOR_TRANSLATION' %}

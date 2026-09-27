@@ -3,11 +3,11 @@ from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 from pdf_translator.domain.entities import Project, Page
-from pdf_translator.domain.enums import PageStatus
-from pdf_translator.domain.errors import ProjectNotFoundError
-from pdf_translator.domain.ports import PDFExtractorPort, ProjectRepositoryPort, PageRepositoryPort
+from pdf_translator.domain.enums import PageStatus, SourceType
+from pdf_translator.domain.errors import ProjectNotFoundError, ArticleFetchError
+from pdf_translator.domain.ports import PDFExtractorPort, ProjectRepositoryPort, PageRepositoryPort, ArticleFetcherPort
 from pdf_translator.adapters.storage.file_storage import FileStorageManager
-from pdf_translator.application.dtos import ProjectCreateDTO, ProjectDetailDTO, ProjectListItemDTO, PageSummaryDTO
+from pdf_translator.application.dtos import ProjectCreateDTO, ProjectDetailDTO, ProjectListItemDTO, PageSummaryDTO, ArticleProjectCreateDTO
 
 class ProjectService:
     def __init__(
@@ -16,11 +16,13 @@ class ProjectService:
         page_repo: PageRepositoryPort,
         pdf_extractor: PDFExtractorPort,
         file_storage: FileStorageManager,
+        article_fetcher: Optional[ArticleFetcherPort] = None,
     ):
         self.project_repo = project_repo
         self.page_repo = page_repo
         self.pdf_extractor = pdf_extractor
         self.file_storage = file_storage
+        self.article_fetcher = article_fetcher
 
     def create_project(self, dto: ProjectCreateDTO) -> Project:
         """Ingests a PDF file, indexes its pages, extracts source text, and renders images."""
@@ -71,6 +73,46 @@ class ProjectService:
 
         return project
 
+    async def create_article_project(self, dto: ArticleProjectCreateDTO) -> Project:
+        """Fetches a web article with its images and stores it as a single-page Project."""
+        url = dto.url.strip()
+        if self.article_fetcher is None:
+            raise ArticleFetchError(url, "No article fetcher is configured.")
+
+        project = Project(
+            title="",
+            source_pdf_filename="",
+            source_pdf_path="",
+            storage_dir="",
+            source_type=SourceType.ARTICLE,
+            source_url=url,
+            total_pages=1,
+            source_language=dto.source_language,
+            target_language=dto.target_language,
+            profile_id=dto.profile_id,
+        )
+        project_dir = self.file_storage.get_project_dir(project.id)
+        try:
+            article = await self.article_fetcher.fetch_article(url, project.id, project_dir / "images")
+        except Exception:
+            self.file_storage.delete_project_dir(project.id)
+            raise
+
+        project.title = dto.title.strip() or article.title or url
+        project.source_url = article.final_url
+        project.storage_dir = str(project_dir)
+        project = self.project_repo.save(project)
+
+        self.page_repo.save(
+            Page(
+                project_id=project.id,
+                page_number=1,
+                status=PageStatus.READY,
+                source_text=article.markdown,
+            )
+        )
+        return project
+
     def list_projects(self) -> List[ProjectListItemDTO]:
         projects = self.project_repo.list_all()
         results = []
@@ -83,6 +125,8 @@ class ProjectService:
                     id=p.id,
                     title=p.title,
                     source_pdf_filename=p.source_pdf_filename,
+                    source_type=p.source_type,
+                    source_url=p.source_url,
                     total_pages=p.total_pages,
                     source_language=p.source_language,
                     target_language=p.target_language,
@@ -126,6 +170,8 @@ class ProjectService:
             id=project.id,
             title=project.title,
             source_pdf_filename=project.source_pdf_filename,
+            source_type=project.source_type,
+            source_url=project.source_url,
             total_pages=project.total_pages,
             source_language=project.source_language,
             target_language=project.target_language,

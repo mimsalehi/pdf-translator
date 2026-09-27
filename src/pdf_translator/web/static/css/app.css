@@ -2227,6 +2227,57 @@ body.reader-page-theme-sage {
   transition: transform 0.15s ease;
 }
 
+/* Original web article rendered in the workspace's left pane (instead of a PDF page image) */
+.article-source-view {
+  width: 100%;
+  max-width: 860px;
+  direction: ltr;
+  text-align: left;
+  line-height: 1.75;
+  color: var(--color-text);
+}
+
+.article-source-view p,
+.article-source-view ul,
+.article-source-view ol,
+.article-source-view blockquote,
+.article-source-view table {
+  margin: 0 0 1rem;
+}
+
+.article-source-view h1,
+.article-source-view h2,
+.article-source-view h3,
+.article-source-view h4 {
+  margin: 1.5rem 0 0.75rem;
+  line-height: 1.35;
+}
+
+.article-source-view a {
+  color: var(--color-primary);
+}
+
+.article-source-view img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1rem auto;
+  border-radius: var(--radius-sm);
+}
+
+.article-source-view pre {
+  overflow-x: auto;
+}
+
+.article-source-link {
+  display: block;
+  margin-bottom: 1rem;
+  font-size: 0.8rem;
+  color: var(--color-primary);
+  direction: ltr;
+  word-break: break-all;
+}
+
 .text-editor-textarea {
   width: 100%;
   height: 100%;
