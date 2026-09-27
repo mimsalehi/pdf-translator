@@ -5,8 +5,16 @@ A local-first web application for translating PDF books page-by-page with Human-
 ## Language
 
 **Project**:
-A translation workspace dedicated to a single source PDF document, containing its configuration, pages, translation history, and export artifacts.
+A translation workspace dedicated to a single source document — a PDF book or a web article — containing its configuration, pages, translation history, and export artifacts.
 _Avoid_: Book (when referring to the workspace entity), Workspace, Task
+
+**SourceType**:
+The origin of a Project's content: `PDF` (an uploaded PDF file, one Page per sheet) or `ARTICLE` (a web article fetched from a URL, stored as exactly one Page containing the full text and all images).
+_Avoid_: Kind, Mode, Format
+
+**Article**:
+A web page whose main content (text, code, tables, and images) is fetched from a URL and translated as a single Page.
+_Avoid_: Post, Webpage, Link
 
 **Page**:
 A single indexed leaf/sheet from the source PDF containing its zero-based index, extracted source text, rendered visual representation, and current workflow lifecycle state.

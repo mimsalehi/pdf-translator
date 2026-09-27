@@ -1,6 +1,6 @@
 # PDF Book Translator
 
-A **Local-first, Python-native Web Application** for translating PDF books page-by-page with **Human-in-the-Loop (HITL)** workflows and **Standard Persian Writing & Typography Engine**.
+A **Local-first, Python-native Web Application** for translating PDF books page-by-page — and web articles straight from a URL — with **Human-in-the-Loop (HITL)** workflows and **Standard Persian Writing & Typography Engine**.
 
 ---
 
@@ -9,7 +9,7 @@ A **Local-first, Python-native Web Application** for translating PDF books page-
 - **Domain-Driven Design (Hexagonal / Ports & Adapters Architecture)**:
   - `domain/`: Business entities (`Project`, `Page`, `TranslationProfile`, `TranslationAttempt`), state machine transitions (`PageStatus`), and ports.
   - `application/`: End-to-end use cases (`ProjectService`, `PageService`, `TranslationService`, `ChapterService`, `ExportService`) and Persian text normalizer.
-  - `adapters/`: PyMuPDF PDF parser & renderer, SQLite persistence, AI providers (`OpenAI`, `Gemini`, `Claude`, `Mock`), and true RTL DOCX/Markdown exporters.
+  - `adapters/`: PyMuPDF PDF parser & renderer, HTTP/Chrome web-article fetcher, SQLite persistence, AI providers (`OpenAI`, `Gemini`, `Claude`, `Mock`), and true RTL DOCX/Markdown exporters.
   - `web/`: FastAPI backend with responsive book reader and in-reading AI assistant.
 
 - **Strict Human-in-the-Loop (HITL)**:
@@ -18,6 +18,12 @@ A **Local-first, Python-native Web Application** for translating PDF books page-
   3. *AI Translation Engine*: Translates via configured LLM profile with glossary support.
   4. *Human Review & Polish*: Operator reviews, edits draft, or retries.
   5. *Book Assembly & Export*: Single-click export of translated pages and complete book in Markdown & DOCX.
+
+- **🌐 Web Article Translation**:
+  - In *New Project*, choose **Web Article (URL)** and paste a link: the full article text and every image are downloaded and kept on a **single page**, then reviewed, translated, read, and exported exactly like a PDF page.
+  - Main content is isolated with readability; lazy-loaded, `srcset`/`<picture>`, WebP/AVIF/GIF, and SVG images are saved locally as PNG; code blocks keep their language.
+  - Sites that block plain downloads (e.g. Cloudflare-protected Medium) or render client-side are opened in your Chrome over CDP (`./launch_chrome_ai.sh`, port 9222). If a bot check appears in that tab, solve it there.
+  - Long articles are translated in paragraph-aligned chunks and reassembled automatically.
 
 - **🇮🇷 Persian Writing, Typography & De-AI Engine**:
   - **De-AI Prompting (حذف لحن ماشینی و متکلف هوش مصنوعی)**:
