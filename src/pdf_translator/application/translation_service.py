@@ -158,6 +158,32 @@ def unmask_image_blocks(translated_text: str, image_blocks: list, original_sourc
     # Clean any leftover or unreplaced placeholder tokens from text
     result = re.sub(r"`*\[\s*\[\s*[\u200e\u200f\u200c]*IMAGE[\s\\_]+BLOCK[\s\\_]+[0-9۰-۹]+[\u200e\u200f\u200c]*\s*\]\s*\]`*\n*", "", result, flags=re.IGNORECASE)
     return result.strip()
+
+TRANSLATION_CHUNK_CHARS = 6000
+
+def split_for_translation(text: str, max_chars: int = TRANSLATION_CHUNK_CHARS) -> List[str]:
+    """
+    Splits (already masked) text at paragraph boundaries into chunks of at most `max_chars`,
+    so long single-page sources such as web articles fit one provider request each.
+    A single paragraph longer than `max_chars` stays whole.
+    """
+    if len(text) <= max_chars:
+        return [text]
+    chunks: List[str] = []
+    current = ""
+    for para in re.split(r"\n{2,}", text.strip()):
+        if not para.strip():
+            continue
+        candidate = f"{current}\n\n{para}" if current else para
+        if current and len(candidate) > max_chars:
+            chunks.append(current)
+            current = para
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks
+
 def is_pure_code_or_media_page(text: str) -> bool:
     """
     Returns True if the page contains ONLY code blocks, image tags, horizontal rules,
@@ -316,14 +342,24 @@ class TranslationService:
         provider = self._resolve_provider(profile)
         
         try:
-            raw_translated_result = await provider.translate(
-                source_text=masked_source_text,
-                source_language=project.source_language,
-                target_language=project.target_language,
-                system_prompt=profile.system_prompt,
-                glossary=[],
-                context_notes=combined_notes,
-            )
+            chunks = split_for_translation(masked_source_text)
+            translated_chunks = []
+            for chunk_number, chunk in enumerate(chunks, start=1):
+                chunk_notes = combined_notes
+                if len(chunks) > 1:
+                    chunk_notes += (
+                        f"\n\nThis is part {chunk_number} of {len(chunks)} of one continuous document. "
+                        "Translate ONLY this part, completely, keeping every placeholder tag it contains."
+                    )
+                translated_chunks.append(await provider.translate(
+                    source_text=chunk,
+                    source_language=project.source_language,
+                    target_language=project.target_language,
+                    system_prompt=profile.system_prompt,
+                    glossary=[],
+                    context_notes=chunk_notes,
+                ))
+            raw_translated_result = "\n\n".join(part.strip() for part in translated_chunks)
             # 2. Restore 100% untouched original code blocks and image blocks
             translated_result = unmask_code_blocks(raw_translated_result, code_blocks)
             translated_result = unmask_image_blocks(translated_result, image_blocks, page.source_text)
