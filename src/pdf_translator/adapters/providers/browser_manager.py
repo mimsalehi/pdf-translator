@@ -4,8 +4,9 @@ import os
 import shutil
 import asyncio
 import subprocess
+import sys
 import re
-from typing import Optional, Dict
+from typing import Optional, Dict, Tuple
 from playwright.async_api import async_playwright, Playwright, Browser, BrowserContext, Page as PlaywrightPage
 from pdf_translator.config import settings
 
@@ -383,6 +384,13 @@ class BrowserManager:
 
     async def _ensure_cdp_connected(self, default_url: str):
         """Ensures active and healthy CDP connection to native Chrome on port 9222."""
+        # Playwright resolves the CDP websocket over HTTP and honours HTTP(S)_PROXY; the local
+        # debugging port must never be sent through a proxy.
+        for var in ("NO_PROXY", "no_proxy"):
+            hosts = [h for h in os.environ.get(var, "").split(",") if h.strip()]
+            missing = [h for h in ("127.0.0.1", "localhost") if h not in hosts]
+            if missing:
+                os.environ[var] = ",".join(hosts + missing)
         if self._browser is not None:
             try:
                 if self._browser.is_connected():
