@@ -197,3 +197,32 @@ def test_article_split_into_nested_sections_is_imported_completely(article_clien
     # The table of contents and site navigation are not article content.
     assert "](https://blog.example.com/articles/extract-service.html#step1)" not in source
     assert "Tags" not in source
+
+
+def test_browser_provider_receives_whole_article_in_one_message(article_client: TestClient, monkeypatch):
+    from pdf_translator.application import translation_service
+
+    sent = []
+
+    class RecordingBrowserProvider:
+        def __init__(self, provider_type):
+            pass
+
+        async def translate(self, source_text, **kwargs):
+            sent.append((source_text, kwargs["context_notes"]))
+            return source_text
+
+    monkeypatch.setattr(translation_service, "BrowserTranslationProvider", RecordingBrowserProvider)
+    article_client.post(
+        "/settings",
+        data={"name": "Browser", "provider_type": "browser_chatgpt", "model_name": "chatgpt",
+              "api_key": "", "system_prompt": "Translate", "temperature": 0.3},
+    )
+    project_id = article_client.post("/api/projects/article", json={"url": ARTICLE_URL}).json()["project_id"]
+    article_client.post(f"/api/projects/{project_id}/pages/1/approve-for-translation")
+    assert article_client.post(f"/api/projects/{project_id}/pages/1/translate", json={}).status_code == 200
+
+    assert len(sent) == 1
+    text, notes = sent[0]
+    assert "Section note 0." in text and "Section note 39." in text
+    assert "part 1 of" not in notes

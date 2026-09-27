@@ -159,6 +159,12 @@ def unmask_image_blocks(translated_text: str, image_blocks: list, original_sourc
     result = re.sub(r"`*\[\s*\[\s*[\u200e\u200f\u200c]*IMAGE[\s\\_]+BLOCK[\s\\_]+[0-9۰-۹]+[\u200e\u200f\u200c]*\s*\]\s*\]`*\n*", "", result, flags=re.IGNORECASE)
     return result.strip()
 
+BROWSER_PROVIDER_TYPES = {
+    ProviderType.BROWSER_CHATGPT,
+    ProviderType.BROWSER_GEMINI,
+    ProviderType.BROWSER_CLAUDE,
+}
+
 TRANSLATION_CHUNK_CHARS = 6000
 
 def split_for_translation(text: str, max_chars: int = TRANSLATION_CHUNK_CHARS) -> List[str]:
@@ -211,11 +217,7 @@ class TranslationService:
         self.profile_repo = profile_repo
 
     def _resolve_provider(self, profile: TranslationProfile) -> TranslationProviderPort:
-        if profile.provider_type in {
-            ProviderType.BROWSER_CHATGPT,
-            ProviderType.BROWSER_GEMINI,
-            ProviderType.BROWSER_CLAUDE,
-        }:
+        if profile.provider_type in BROWSER_PROVIDER_TYPES:
             return BrowserTranslationProvider(profile.provider_type)
 
         elif profile.provider_type == ProviderType.OPENAI:
@@ -342,7 +344,11 @@ class TranslationService:
         provider = self._resolve_provider(profile)
         
         try:
-            chunks = split_for_translation(masked_source_text)
+            # Chat UIs take the whole document in one message; only API providers need output-sized chunks.
+            if profile.provider_type in BROWSER_PROVIDER_TYPES:
+                chunks = [masked_source_text]
+            else:
+                chunks = split_for_translation(masked_source_text)
             translated_chunks = []
             for chunk_number, chunk in enumerate(chunks, start=1):
                 chunk_notes = combined_notes

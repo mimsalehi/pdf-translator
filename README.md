@@ -23,7 +23,7 @@ A **Local-first, Python-native Web Application** for translating PDF books page-
   - In *New Project*, choose **Web Article (URL)** and paste a link: the full article text and every image are downloaded and kept on a **single page**, then reviewed, translated, read, and exported exactly like a PDF page.
   - Main content is isolated with readability; lazy-loaded, `srcset`/`<picture>`, WebP/AVIF/GIF, and SVG images are saved locally as PNG; code blocks keep their language.
   - Sites that block plain downloads (e.g. Cloudflare-protected Medium) or render client-side are opened in your Chrome over CDP (`./launch_chrome_ai.sh`, port 9222). If a bot check appears in that tab, solve it there.
-  - Long articles are translated in paragraph-aligned chunks and reassembled automatically.
+  - Browser providers (ChatGPT/Gemini/Claude web) receive the whole article in one message; API providers translate long articles in paragraph-aligned chunks that are reassembled automatically.
 
 - **🇮🇷 Persian Writing, Typography & De-AI Engine**:
   - **De-AI Prompting (حذف لحن ماشینی و متکلف هوش مصنوعی)**:
