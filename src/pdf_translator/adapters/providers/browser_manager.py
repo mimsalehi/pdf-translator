@@ -158,29 +158,56 @@ class BrowserManager:
         if not clean_text:
             return
 
-        # 1. Primary Method: Fast atomic document.execCommand('insertText') on contenteditable DIV/textarea
+        # 1. Primary Method: Fast atomic DataTransfer/Clipboard paste with fallback to document.execCommand('insertText')
         inserted = False
         try:
             inserted = await page.evaluate("""(text) => {
                 const el = document.querySelector('div#prompt-textarea[contenteditable="true"]')
+                        || document.querySelector('div.ProseMirror')
                         || document.querySelector('#prompt-textarea')
                         || document.querySelector('rich-textarea div[contenteditable="true"]')
                         || document.querySelector('div.ql-editor')
-                        || document.querySelector('div.ProseMirror')
                         || document.querySelector('div[contenteditable="true"]')
                         || document.querySelector('textarea')
                         || document.activeElement;
                 if (!el) return false;
                 el.focus();
-                document.execCommand('selectAll', false, null);
-                document.execCommand('delete', false, null);
-                const ok = document.execCommand('insertText', false, text);
                 try {
+                    document.execCommand('selectAll', false, null);
+                    document.execCommand('delete', false, null);
+                } catch(e) {}
+
+                // Try 1: ClipboardEvent paste (native ProseMirror/React listener)
+                try {
+                    const dt = new DataTransfer();
+                    dt.setData('text/plain', text);
+                    el.dispatchEvent(new ClipboardEvent('paste', {
+                        bubbles: true,
+                        cancelable: true,
+                        clipboardData: dt
+                    }));
+                } catch(e) {}
+
+                let curLen = (el.innerText || el.textContent || el.value || '').trim().length;
+                if (curLen < Math.min(text.length * 0.8, 20)) {
+                    try {
+                        document.execCommand('insertText', false, text);
+                    } catch(e) {}
+                }
+
+                try {
+                    el.dispatchEvent(new InputEvent('beforeinput', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: 'insertText',
+                        data: text.substring(0, 1)
+                    }));
                     el.dispatchEvent(new Event('input', { bubbles: true }));
                     el.dispatchEvent(new Event('change', { bubbles: true }));
                 } catch(e) {}
-                const curLen = (el.innerText || el.textContent || el.value || '').trim().length;
-                return ok && curLen >= Math.min(text.length * 0.8, 20);
+
+                curLen = (el.innerText || el.textContent || el.value || '').trim().length;
+                return curLen >= Math.min(text.length * 0.8, 20);
             }""", clean_text)
         except Exception:
             inserted = False
@@ -188,8 +215,8 @@ class BrowserManager:
         if inserted:
             return
 
-        # 2. If initial execCommand did not insert, ensure editor click and retry
-        editor_loc = page.locator('#prompt-textarea, rich-textarea div[contenteditable="true"], div.ql-editor, div.ProseMirror, div[contenteditable="true"], textarea').first
+        # 2. If initial insertion did not work, ensure editor click and retry
+        editor_loc = page.locator('div.ProseMirror, #prompt-textarea, rich-textarea div[contenteditable="true"], div.ql-editor, div[contenteditable="true"], textarea').first
         try:
             if await editor_loc.is_visible(timeout=800):
                 await editor_loc.click(force=True, timeout=1200)
@@ -198,9 +225,15 @@ class BrowserManager:
 
         try:
             inserted = await page.evaluate("""(text) => {
-                const el = document.activeElement || document.querySelector('#prompt-textarea');
+                const el = document.activeElement || document.querySelector('div.ProseMirror') || document.querySelector('#prompt-textarea');
                 if (!el) return false;
-                return document.execCommand('insertText', false, text);
+                const ok = document.execCommand('insertText', false, text);
+                try {
+                    el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: text.substring(0, 1) }));
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    el.dispatchEvent(new Event('change', { bubbles: true }));
+                } catch(e) {}
+                return ok;
             }""", clean_text)
         except Exception:
             inserted = False
@@ -230,17 +263,21 @@ class BrowserManager:
 
         editor = page.locator(editor_selector).first
         send_btn = page.locator(
-            f"{send_button_selector}, button.composer-submit-button-color:not([aria-label='Start Voice']), button[data-testid='send-button'], button#composer-submit-button, button[aria-label*='Send' i]"
+            f"{send_button_selector}, button[aria-label*='Send' i]:not([aria-label*='Voice' i]), button.composer-submit-button-color:not([aria-label='Start Voice']), button[data-testid='send-button'], button#composer-submit-button, button.bg-composer-primary:not([aria-label*='Voice' i]), form button[type='submit']:not([aria-label*='Voice' i])"
         ).first
-        stop_btn = page.locator(stop_button_selector).first
+        stop_btn = page.locator(
+            f"{stop_button_selector}, button[data-testid='stop-button'], button[aria-label*='Stop' i], button[aria-label*='توقف' i], button.stop-button"
+        ).first
 
         btn_is_enabled = False
         try:
             if await send_btn.is_visible(timeout=500):
                 btn_is_enabled = await page.evaluate("""(sel) => {
                     const btn = document.querySelector(sel)
+                             || document.querySelector('button[aria-label*="Send" i]:not([aria-label*="Voice" i])')
                              || document.querySelector('button[data-testid="send-button"]')
                              || document.querySelector('button#composer-submit-button')
+                             || document.querySelector('button.bg-composer-primary:not([aria-label*="Voice" i])')
                              || document.querySelector('button.composer-submit-button-color:not([aria-label="Start Voice"])');
                     if (!btn) return false;
                     if (btn.disabled) return false;
@@ -267,6 +304,7 @@ class BrowserManager:
                     const el = document.querySelector('div#prompt-textarea.ProseMirror p')
                             || document.querySelector('div#prompt-textarea p')
                             || document.querySelector('div#prompt-textarea')
+                            || document.querySelector('div.ProseMirror')
                             || document.querySelector('form textarea')
                             || document.querySelector('textarea');
                     if (el) el.focus();
@@ -296,7 +334,7 @@ class BrowserManager:
 
             try:
                 cur_text = await page.evaluate("""(sel) => {
-                    const el = document.querySelector(sel);
+                    const el = document.querySelector(sel) || document.querySelector('div.ProseMirror');
                     return el ? (el.innerText || el.value || '').trim() : '';
                 }""", editor_selector)
                 if len(cur_text) == 0:
@@ -647,32 +685,79 @@ class BrowserManager:
 
         # Record baseline identity of the last assistant turn BEFORE sending
         baseline_info = await page.evaluate("""() => {
-            const assts = document.querySelectorAll('div[data-message-author-role="assistant"]');
-            if (assts.length === 0) return { lastId: null };
+            let assts = document.querySelectorAll('[data-markdown-text-style="assistant-message"], div[data-message-author-role="assistant"]');
+            if (assts.length === 0) {
+                assts = document.querySelectorAll('div[data-dil-source-message-id]');
+            }
+            if (assts.length === 0) return { lastId: null, count: 0 };
             const last = assts[assts.length - 1];
-            return {
-                lastId: last.getAttribute('data-message-id') || (last.textContent || '').trim().substring(0, 50)
-            };
+            const lastId = last.getAttribute('data-message-id')
+                || (last.querySelector('[data-dil-source-message-id]') ? last.querySelector('[data-dil-source-message-id]').getAttribute('data-dil-source-message-id') : null)
+                || last.getAttribute('data-dil-source-message-id')
+                || (last.textContent || '').trim().substring(0, 60);
+            return { lastId, count: assts.length };
         }""")
 
         # 2. Paste prompt
         await self._safe_insert_multiline_prompt(page, prompt)
 
-        # 3. Press Enter (ChatGPT sends automatically!)
-        await page.keyboard.press("Enter")
+        # 3. Submit prompt: Prioritize Send button click, with Enter as fallback
+        send_btn = page.locator(
+            'button[aria-label*="Send" i]:not([aria-label*="Voice" i]), button[data-testid="send-button"], button#composer-submit-button, button.bg-composer-primary:not([aria-label*="Voice" i]), form button[type="submit"]:not([aria-label*="Voice" i])'
+        ).first
 
-        # Fast backup check: if editor still has text, click send button or press Enter again
-        await asyncio.sleep(0.08)
+        submitted = False
+        # Give React up to 1.5s to swap "Start Voice" to "Send" and click it
+        for _ in range(15):
+            try:
+                if await send_btn.is_visible(timeout=100):
+                    is_disabled = await page.evaluate("""() => {
+                        const btn = document.querySelector('button[aria-label*="Send" i]:not([aria-label*="Voice" i]), button[data-testid="send-button"], button#composer-submit-button, button.bg-composer-primary:not([aria-label*="Voice" i])');
+                        if (!btn) return true;
+                        return btn.disabled || btn.getAttribute('aria-disabled') === 'true' || btn.getAttribute('data-disabled') === 'true';
+                    }""")
+                    if not is_disabled:
+                        await send_btn.click(force=True, timeout=800)
+                        submitted = True
+                        break
+            except Exception:
+                pass
+            await asyncio.sleep(0.1)
+
+        if not submitted:
+            # Fallback 1: evaluate click directly in page context
+            try:
+                submitted = await page.evaluate("""() => {
+                    const btn = document.querySelector('button[aria-label*="Send" i]:not([aria-label*="Voice" i]), button[data-testid="send-button"], button#composer-submit-button, button.bg-composer-primary:not([aria-label*="Voice" i])');
+                    if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                }""")
+            except Exception:
+                submitted = False
+
+        if not submitted:
+            # Fallback 2: focus editor and press Enter
+            try:
+                await editor.focus()
+                await page.keyboard.press("Enter")
+            except Exception:
+                pass
+
+        # Fast backup check: if editor still has text after 0.5s, retry sending
+        await asyncio.sleep(0.5)
         try:
             ed_has_text = await page.evaluate("""() => {
-                const el = document.querySelector('div#prompt-textarea');
+                const el = document.querySelector('div.ProseMirror, div#prompt-textarea, [contenteditable="true"]');
                 return el && (el.innerText || el.textContent || '').trim().length > 0;
             }""")
             if ed_has_text:
-                btn = page.locator('form button[data-testid="send-button"], form button#composer-submit-button, button[aria-label*="Send" i]:not([aria-label="Start Voice"])').first
-                if await btn.is_visible(timeout=300):
-                    await btn.click(force=True, timeout=500)
+                if await send_btn.is_visible(timeout=300):
+                    await send_btn.click(force=True, timeout=500)
                 else:
+                    await editor.focus()
                     await page.keyboard.press("Enter")
         except Exception:
             pass
@@ -685,31 +770,39 @@ class BrowserManager:
         extracted_html = None
 
         while (asyncio.get_event_loop().time() - start_time) < timeout_seconds:
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.2)
             is_stopping = False
             try:
-                is_stopping = await stop_btn.is_visible()
+                is_stopping = await stop_btn.is_visible(timeout=50)
             except Exception:
                 is_stopping = False
 
             check = await page.evaluate("""(base) => {
-                const assts = document.querySelectorAll('div[data-message-author-role="assistant"]');
+                let assts = document.querySelectorAll('[data-markdown-text-style="assistant-message"], div[data-message-author-role="assistant"]');
+                if (assts.length === 0) {
+                    assts = document.querySelectorAll('div[data-dil-source-message-id]');
+                }
                 if (assts.length === 0) return null;
-                const last = assts[assts.length - 1];
-                const curId = last.getAttribute('data-message-id') || (last.textContent || '').trim().substring(0, 50);
+                if (base && base.count && assts.length < base.count) return null;
 
-                if (base.lastId && curId === base.lastId) {
+                const last = assts[assts.length - 1];
+                const curId = last.getAttribute('data-message-id')
+                    || (last.querySelector('[data-dil-source-message-id]') ? last.querySelector('[data-dil-source-message-id]').getAttribute('data-dil-source-message-id') : null)
+                    || last.getAttribute('data-dil-source-message-id')
+                    || (last.textContent || '').trim().substring(0, 60);
+
+                if (base && base.lastId && curId === base.lastId && assts.length <= (base.count || 1)) {
                     return null;
                 }
 
-                const mdBox = last.querySelector('.markdown, div.prose, div[class*="markdown"]') || last;
+                const mdBox = last.querySelector('.markdown, div.prose, div[class*="markdown"], [data-markdown-copy="contents"]') || last;
                 return {
                     text: (mdBox.textContent || '').trim(),
                     html: mdBox.innerHTML
                 };
             }""", baseline_info)
 
-            if not check:
+            if not check or not isinstance(check, dict) or "text" not in check:
                 continue
 
             cur_text = check["text"]
@@ -721,16 +814,19 @@ class BrowserManager:
                     prev_len = len(cur_text)
                     stable_count = 0
 
-                if stable_count >= 1:
+                if stable_count >= 2:
                     extracted_html = check["html"]
                     break
 
         if not extracted_html:
             extracted_html = await page.evaluate("""() => {
-                const assts = document.querySelectorAll('div[data-message-author-role="assistant"]');
+                let assts = document.querySelectorAll('[data-markdown-text-style="assistant-message"], div[data-message-author-role="assistant"]');
+                if (assts.length === 0) {
+                    assts = document.querySelectorAll('div[data-dil-source-message-id]');
+                }
                 if (assts.length === 0) return null;
                 const last = assts[assts.length - 1];
-                const mdBox = last.querySelector('.markdown, div.prose, div[class*="markdown"]') || last;
+                const mdBox = last.querySelector('.markdown, div.prose, div[class*="markdown"], [data-markdown-copy="contents"]') || last;
                 return mdBox.innerHTML || last.innerHTML;
             }""")
 

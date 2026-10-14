@@ -303,3 +303,65 @@ async def test_translate_with_gemini_waits_for_completion():
     res = await manager.translate_with_gemini("Test prompt", timeout_seconds=10)
     assert "ترجمه کامل متن." in res
 
+@pytest.mark.asyncio
+async def test_translate_with_chatgpt_submits_via_send_button_and_extracts_response():
+    """Ensures translate_with_chatgpt clicks the Send button and extracts response from new DOM."""
+    from unittest.mock import AsyncMock, MagicMock
+    from pdf_translator.adapters.providers.browser_manager import BrowserManager
+
+    manager = BrowserManager.get_instance()
+    mock_page = MagicMock()
+    manager.get_or_create_page = AsyncMock(return_value=mock_page)
+
+    mock_editor = MagicMock()
+    mock_editor.wait_for = AsyncMock()
+    mock_editor.click = AsyncMock()
+
+    mock_send_btn = MagicMock()
+    mock_send_btn.is_visible = AsyncMock(return_value=True)
+    mock_send_btn.click = AsyncMock()
+
+    mock_stop_btn = MagicMock()
+    mock_stop_btn.is_visible = AsyncMock(return_value=False)
+
+    def locator_router(selector):
+        loc = MagicMock()
+        if "ProseMirror" in selector or "prompt-textarea" in selector:
+            loc.first = mock_editor
+        elif "Send" in selector or "send-button" in selector:
+            loc.first = mock_send_btn
+        elif "stop" in selector or "Stop" in selector:
+            loc.first = mock_stop_btn
+        else:
+            loc.first = MagicMock()
+        return loc
+
+    mock_page.locator = MagicMock(side_effect=locator_router)
+    mock_page.keyboard = AsyncMock()
+
+    async def mock_evaluate(script, *args):
+        if "(base) =>" in script:
+            return {
+                "text": "این یک ترجمه آزمایشی است.",
+                "html": "<p>این یک ترجمه آزمایشی است.</p>"
+            }
+        elif "dismissBtns" in script:
+            return None
+        elif "baseline_info" in script or "lastId" in script:
+            return {"lastId": None, "count": 0}
+        elif "ClipboardEvent" in script or "insertText" in script:
+            return True
+        elif "btn.disabled" in script or "is_disabled" in script:
+            return False
+        elif "ed_has_text" in script or "innerText || el.textContent" in script:
+            return False
+        elif "data-markdown-text-style" in script or "assts" in script:
+            return "<p>این یک ترجمه آزمایشی است.</p>"
+        return None
+
+    mock_page.evaluate = AsyncMock(side_effect=mock_evaluate)
+
+    res = await manager.translate_with_chatgpt("Translate this prompt", timeout_seconds=10)
+    assert "این یک ترجمه آزمایشی است." in res
+    mock_send_btn.click.assert_awaited()
+
